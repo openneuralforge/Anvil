@@ -9,6 +9,7 @@ import (
 // Blueprint encapsulates the entire neural network
 type Blueprint struct {
 	Neurons             map[int]*Neuron
+	QuantumNeurons      map[int]*QuantumNeuron
 	InputNodes          []int
 	OutputNodes         []int
 	ScalarActivationMap map[string]ActivationFunc
@@ -18,29 +19,50 @@ type Blueprint struct {
 func NewBlueprint() *Blueprint {
 	return &Blueprint{
 		Neurons:             make(map[int]*Neuron),
+		QuantumNeurons:      make(map[int]*QuantumNeuron),
 		ScalarActivationMap: scalarActivationFunctions,
 	}
 }
 
 // LoadNeurons loads neurons from a JSON string
 func (bp *Blueprint) LoadNeurons(jsonData string) error {
-	var neurons []Neuron
-	if err := json.Unmarshal([]byte(jsonData), &neurons); err != nil {
+	var rawNeurons []json.RawMessage
+	if err := json.Unmarshal([]byte(jsonData), &rawNeurons); err != nil {
 		return err
 	}
 
-	for i := range neurons {
-		neuron := &neurons[i]
-		// Initialize gate weights for LSTM neurons
-		if neuron.Type == "lstm" {
-			neuron.GateWeights = map[string][]float64{
-				"input":  bp.RandomWeights(len(neuron.Connections)),
-				"forget": bp.RandomWeights(len(neuron.Connections)),
-				"output": bp.RandomWeights(len(neuron.Connections)),
-				"cell":   bp.RandomWeights(len(neuron.Connections)),
-			}
+	for _, rawNeuron := range rawNeurons {
+		var baseNeuron struct {
+			ID   int    `json:"id"`
+			Type string `json:"type"`
 		}
-		bp.Neurons[neuron.ID] = neuron
+		if err := json.Unmarshal(rawNeuron, &baseNeuron); err != nil {
+			return err
+		}
+
+		switch baseNeuron.Type {
+		case "quantum":
+			var qNeuron QuantumNeuron
+			if err := json.Unmarshal(rawNeuron, &qNeuron); err != nil {
+				return err
+			}
+			bp.QuantumNeurons[qNeuron.ID] = &qNeuron
+		default:
+			var neuron Neuron
+			if err := json.Unmarshal(rawNeuron, &neuron); err != nil {
+				return err
+			}
+			// Initialize gate weights for LSTM neurons
+			if neuron.Type == "lstm" {
+				neuron.GateWeights = map[string][]float64{
+					"input":  bp.RandomWeights(len(neuron.Connections)),
+					"forget": bp.RandomWeights(len(neuron.Connections)),
+					"output": bp.RandomWeights(len(neuron.Connections)),
+					"cell":   bp.RandomWeights(len(neuron.Connections)),
+				}
+			}
+			bp.Neurons[neuron.ID] = &neuron
+		}
 	}
 
 	return nil
