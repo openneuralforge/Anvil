@@ -47,6 +47,35 @@ func (bp *Blueprint) LoadNeurons(jsonData string) error {
 				return err
 			}
 			bp.QuantumNeurons[qNeuron.ID] = &qNeuron
+
+		case "nca":
+			var ncaNeuron Neuron
+			if err := json.Unmarshal(rawNeuron, &ncaNeuron); err != nil {
+				return err
+			}
+			bp.Neurons[ncaNeuron.ID] = &ncaNeuron
+
+		case "cnn":
+			var cnnNeuron Neuron
+			if err := json.Unmarshal(rawNeuron, &cnnNeuron); err != nil {
+				return err
+			}
+			// Ensure kernels are initialized; if not provided, initialize with default kernels
+			if len(cnnNeuron.Kernels) == 0 {
+				// Example: Initialize with default kernels
+				cnnNeuron.Kernels = [][]float64{
+					{0.2, 0.5}, // Default Kernel 0
+					{0.3, 0.4}, // Default Kernel 1
+				}
+				fmt.Printf("CNN Neuron %d: No kernels provided. Initialized with default kernels.\n", cnnNeuron.ID)
+			}
+			// Ensure activation is set to "relu"; if not, default to "relu"
+			if cnnNeuron.Activation == "" {
+				cnnNeuron.Activation = "relu"
+				fmt.Printf("CNN Neuron %d: Activation not provided. Set to 'relu'.\n", cnnNeuron.ID)
+			}
+			bp.Neurons[cnnNeuron.ID] = &cnnNeuron
+
 		default:
 			var neuron Neuron
 			if err := json.Unmarshal(rawNeuron, &neuron); err != nil {
@@ -60,6 +89,11 @@ func (bp *Blueprint) LoadNeurons(jsonData string) error {
 					"output": bp.RandomWeights(len(neuron.Connections)),
 					"cell":   bp.RandomWeights(len(neuron.Connections)),
 				}
+			}
+			// Ensure activation is set; default to "linear" if not provided
+			if neuron.Activation == "" {
+				neuron.Activation = "linear"
+				fmt.Printf("Neuron %d: Activation not provided. Set to 'linear'.\n", neuron.ID)
 			}
 			bp.Neurons[neuron.ID] = &neuron
 		}
@@ -92,7 +126,8 @@ func (bp *Blueprint) ApplyScalarActivation(value float64, activation string) flo
 	if actFunc, exists := bp.ScalarActivationMap[activation]; exists {
 		return actFunc(value)
 	}
-	// Default to linear if activation function not found
+	// Log a warning and use linear activation
+	fmt.Printf("Warning: Undefined activation '%s'. Using linear activation.\n", activation)
 	return Linear(value)
 }
 

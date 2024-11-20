@@ -19,9 +19,13 @@ type Neuron struct {
 	DropoutRate float64     `json:"dropout_rate"` // For Dropout
 	BatchNorm   bool        `json:"batch_norm"`   // Apply batch normalization
 	Attention   bool        `json:"attention"`    // Apply attention mechanism
+	Kernels     [][]float64 `json:"kernels"`      // Multiple kernels for CNN neurons
 	// Additional fields for LSTM
 	CellState   float64              // For LSTM cell state
 	GateWeights map[string][]float64 // Weights for LSTM gates
+
+	NeighborhoodIDs []int  `json:"neighborhood"` // IDs of neighboring neurons (for NCA)
+	UpdateRules     string `json:"update_rules"` // Rules for updating (e.g., Sum, Average)
 }
 
 // ProcessNeuron processes a single neuron based on its type
@@ -32,6 +36,8 @@ func (bp *Blueprint) ProcessNeuron(neuron *Neuron, inputs []float64, timestep in
 	}
 
 	switch neuron.Type {
+	case "nca":
+		bp.ProcessNCANeuron(neuron)
 	case "rnn":
 		bp.ProcessRNNNeuron(neuron, inputs)
 	case "lstm":
@@ -107,26 +113,49 @@ func (bp *Blueprint) ProcessLSTMNeuron(neuron *Neuron, inputs []float64) {
 	fmt.Printf("LSTM Neuron %d: Value=%f, CellState=%f\n", neuron.ID, neuron.Value, neuron.CellState)
 }
 
-// ProcessCNNNeuron applies convolutional behavior
+// ProcessCNNNeuron applies convolutional behavior using the neuron's predefined kernels
 func (bp *Blueprint) ProcessCNNNeuron(neuron *Neuron, inputs []float64) {
-	// Simple convolution with a predefined kernel
-	kernel := []float64{0.2, 0.5, 0.2} // Example kernel
-	outputs := make([]float64, len(inputs)-len(kernel)+1)
-	for i := 0; i <= len(inputs)-len(kernel); i++ {
-		sum := neuron.Bias
-		for j := 0; j < len(kernel); j++ {
-			sum += inputs[i+j] * kernel[j]
-		}
-		outputs[i] = bp.ApplyScalarActivation(sum, neuron.Activation)
-		fmt.Printf("CNN Neuron %d: Output[%d]=%f\n", neuron.ID, i, outputs[i])
+	if len(neuron.Kernels) == 0 {
+		fmt.Printf("CNN Neuron %d: No kernels defined. Setting value to 0.\n", neuron.ID)
+		neuron.Value = 0.0
+		return
 	}
-	// Aggregate outputs (e.g., take the mean)
+
+	// Iterate over each kernel assigned to the neuron
+	convolutionOutputs := []float64{}
+	for k, kernel := range neuron.Kernels {
+		kernelSize := len(kernel)
+		if len(inputs) < kernelSize {
+			fmt.Printf("CNN Neuron %d: Skipping kernel %d due to insufficient inputs (required: %d, got: %d)\n", neuron.ID, k, kernelSize, len(inputs))
+			continue
+		}
+
+		// Perform convolution for the current kernel
+		for i := 0; i <= len(inputs)-kernelSize; i++ {
+			sum := neuron.Bias
+			for j := 0; j < kernelSize; j++ {
+				sum += inputs[i+j] * kernel[j]
+			}
+			activatedValue := bp.ApplyScalarActivation(sum, neuron.Activation)
+			convolutionOutputs = append(convolutionOutputs, activatedValue)
+			fmt.Printf("CNN Neuron %d: Kernel %d Output[%d]=%f\n", neuron.ID, k, i, activatedValue)
+		}
+	}
+
+	// Handle cases where no valid convolution outputs were generated
+	if len(convolutionOutputs) == 0 {
+		fmt.Printf("CNN Neuron %d: No valid convolution outputs. Setting value to 0.\n", neuron.ID)
+		neuron.Value = 0.0
+		return
+	}
+
+	// Aggregate the convolution outputs (e.g., by taking the mean)
 	aggregate := 0.0
-	for _, v := range outputs {
+	for _, v := range convolutionOutputs {
 		aggregate += v
 	}
-	neuron.Value = aggregate / float64(len(outputs))
-	fmt.Printf("CNN Neuron %d: Value=%f\n", neuron.ID, neuron.Value)
+	neuron.Value = aggregate / float64(len(convolutionOutputs))
+	fmt.Printf("CNN Neuron %d: Aggregated Value=%f\n", neuron.ID, neuron.Value)
 }
 
 // ApplyDropout randomly zeroes out a neuron's value
@@ -158,6 +187,7 @@ func (bp *Blueprint) ApplyAttention(neuron *Neuron, inputs []float64, attentionW
 
 // ComputeAttentionWeights computes attention weights for the given inputs
 func (bp *Blueprint) ComputeAttentionWeights(neuron *Neuron, inputs []float64) []float64 {
+
 	// Simple scaled dot-product attention
 	queries := inputs
 	keys := inputs
@@ -193,4 +223,44 @@ func (bp *Blueprint) ApplySoftmax() {
 			fmt.Printf("Softmax Applied to Neuron %d: Value=%f\n", id, neuron.Value)
 		}
 	}
+}
+
+func (bp *Blueprint) ProcessNCANeuron(neuron *Neuron) {
+	// Gather values from neighboring neurons
+	neighborValues := []float64{}
+	for _, neighborID := range neuron.NeighborhoodIDs {
+		if neighbor, exists := bp.Neurons[neighborID]; exists {
+			neighborValues = append(neighborValues, neighbor.Value)
+		}
+	}
+
+	// Apply update rules
+	var newValue float64
+	switch neuron.UpdateRules {
+	case "sum":
+		for _, value := range neighborValues {
+			newValue += value
+		}
+	case "average":
+		sum := 0.0
+		for _, value := range neighborValues {
+			sum += value
+		}
+		newValue = sum / float64(len(neighborValues))
+	default:
+		fmt.Printf("Unknown update rule for NCA Neuron %d\n", neuron.ID)
+		return
+	}
+
+	// Apply activation function
+	neuron.Value = bp.ApplyScalarActivation(newValue+neuron.Bias, neuron.Activation)
+	fmt.Printf("NCA Neuron %d: Value=%f\n", neuron.ID, neuron.Value)
+}
+
+func (bp *Blueprint) InitializeKernel(kernelSize int) []float64 {
+	kernel := make([]float64, kernelSize)
+	for i := range kernel {
+		kernel[i] = rand.Float64() // Initialize with random weights between 0 and 1
+	}
+	return kernel
 }

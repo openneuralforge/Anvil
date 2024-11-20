@@ -50,3 +50,8 @@ func ELU(x float64) float64 {
 func Linear(x float64) float64 {
 	return x
 }
+
+// InitializeActivationFunctions returns the activation functions map
+func InitializeActivationFunctions() map[string]ActivationFunc {
+	return scalarActivationFunctions
+}
