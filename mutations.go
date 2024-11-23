@@ -81,8 +81,14 @@ func (bp *Blueprint) InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType string
 	}
 
 	// Initialize connection-dependent fields based on neuron type
-	if neuronType == "lstm" {
+	switch neuronType {
+	case "lstm":
 		bp.initializeLSTMWeights(newNeuron)
+	case "nca":
+		bp.initializeNCACustomFields(newNeuron)
+	case "batch_norm":
+		bp.initializeBatchNormFields(newNeuron)
+		// Add cases for other neuron types as needed
 	}
 	// Add similar initializations for other neuron types if needed
 
@@ -139,9 +145,25 @@ func (bp *Blueprint) createNeuron(id int, neuronType string) (*Neuron, error) {
 	case "dropout":
 		neuron.DropoutRate = 0.5 // Default dropout rate
 	case "batch_norm":
-		// Batch normalization parameters can be added here
+
+		// Initialize batch normalization parameters
+		neuron.BatchNormParams = &BatchNormParams{
+			Gamma: 1.0,
+			Beta:  0.0,
+			Mean:  0.0,
+			Var:   1.0,
+		}
+
 	case "attention":
 		neuron.Attention = true
+		neuron.AttentionWeights = []float64{}
+	case "nca":
+		neuron.Activation = "linear" // Or any appropriate activation for NCA
+		// Initialize NCA-specific fields
+		neuron.NCAState = make([]float64, 10) // Example: state vector of size 10
+		for i := range neuron.NCAState {
+			neuron.NCAState[i] = rand.Float64()*2 - 1 // Initialize between -1 and 1
+		}
 	default:
 		return nil, fmt.Errorf("unsupported neuron type: %s", neuronType)
 	}
@@ -152,7 +174,7 @@ func (bp *Blueprint) createNeuron(id int, neuronType string) (*Neuron, error) {
 // isValidNeuronType checks if the provided neuron type is supported.
 func (bp *Blueprint) isValidNeuronType(neuronType string) bool {
 	supportedTypes := []string{
-		"dense", "rnn", "lstm", "cnn", "dropout", "batch_norm", "attention",
+		"dense", "rnn", "lstm", "cnn", "dropout", "batch_norm", "attention", "nca",
 	}
 	for _, t := range supportedTypes {
 		if neuronType == t {
@@ -188,7 +210,7 @@ func (bp *Blueprint) isInputNode(neuronID int) bool {
 // For demonstration, it inserts one neuron of each supported type between inputs and outputs.
 func (bp *Blueprint) MutateNetwork() error {
 	neuronTypes := []string{
-		"dense", "rnn", "lstm", "cnn", "dropout", "batch_norm", "attention",
+		"dense", "rnn", "lstm", "cnn", "dropout", "batch_norm", "attention", "nca",
 	}
 
 	for _, neuronType := range neuronTypes {
@@ -213,4 +235,42 @@ func (bp *Blueprint) ToJSON() (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+// initializeNCACustomFields initializes the NCA-specific fields for an NCA neuron.
+func (bp *Blueprint) initializeNCACustomFields(neuron *Neuron) {
+	// Example: Initialize NeighborhoodIDs and UpdateRules
+	// For demonstration, let's assume NCA neurons are connected to all input neurons
+	neuron.NeighborhoodIDs = append(neuron.NeighborhoodIDs, bp.InputNodes...)
+	// Set a default update rule, e.g., "sum". This can be made configurable.
+	neuron.UpdateRules = "sum"
+
+	fmt.Printf("Initialized NCA-specific fields for NCA Neuron %d: NeighborhoodIDs=%v, UpdateRules=%s\n", neuron.ID, neuron.NeighborhoodIDs, neuron.UpdateRules)
+}
+
+// blueprint.go
+
+// initializeBatchNormFields initializes the BatchNormParams for a BatchNorm neuron.
+// It sets Gamma, Beta, Mean, and Variance based on provided values or defaults.
+func (bp *Blueprint) initializeBatchNormFields(neuron *Neuron) {
+	// Check if BatchNormParams are already set
+	if neuron.BatchNormParams != nil {
+		fmt.Printf("BatchNorm Neuron %d: BatchNormParams already initialized.\n", neuron.ID)
+		return
+	}
+
+	// Initialize BatchNormParams with default or specified values
+	neuron.BatchNormParams = &BatchNormParams{
+		Gamma: 1.0, // Scale parameter
+		Beta:  0.0, // Shift parameter
+		Mean:  0.0, // Running mean
+		Var:   1.0, // Running variance
+	}
+
+	// Optionally, if you want to allow customization via JSON, you can check if values are provided
+	// For simplicity, we're using default values here
+
+	fmt.Printf("Initialized BatchNormParams for BatchNorm Neuron %d: Gamma=%.2f, Beta=%.2f, Mean=%.2f, Var=%.2f\n",
+		neuron.ID, neuron.BatchNormParams.Gamma, neuron.BatchNormParams.Beta,
+		neuron.BatchNormParams.Mean, neuron.BatchNormParams.Var)
 }

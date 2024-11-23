@@ -6,26 +6,38 @@ import (
 	"math/rand"
 )
 
+// BatchNormParams holds parameters for batch normalization
+type BatchNormParams struct {
+	Gamma float64 `json:"gamma"`
+	Beta  float64 `json:"beta"`
+	Mean  float64 `json:"mean"`
+	Var   float64 `json:"var"`
+}
+
 // Neuron represents a single neuron in the network
 type Neuron struct {
-	ID          int         `json:"id"`
-	Type        string      `json:"type"`         // Dense, RNN, LSTM, CNN, etc.
-	Value       float64     `json:"value"`        // Current value
-	Bias        float64     `json:"bias"`         // Default: 0.0
-	Connections [][]float64 `json:"connections"`  // [source_id, weight]
-	Activation  string      `json:"activation"`   // Activation function
-	LoopCount   int         `json:"loop_count"`   // For RNN/LSTM loops
-	WindowSize  int         `json:"window_size"`  // For CNN
-	DropoutRate float64     `json:"dropout_rate"` // For Dropout
-	BatchNorm   bool        `json:"batch_norm"`   // Apply batch normalization
-	Attention   bool        `json:"attention"`    // Apply attention mechanism
-	Kernels     [][]float64 `json:"kernels"`      // Multiple kernels for CNN neurons
+	ID               int              `json:"id"`
+	Type             string           `json:"type"`              // Dense, RNN, LSTM, CNN, etc.
+	Value            float64          `json:"value"`             // Current value
+	Bias             float64          `json:"bias"`              // Default: 0.0
+	Connections      [][]float64      `json:"connections"`       // [source_id, weight]
+	Activation       string           `json:"activation"`        // Activation function
+	LoopCount        int              `json:"loop_count"`        // For RNN/LSTM loops
+	WindowSize       int              `json:"window_size"`       // For CNN
+	DropoutRate      float64          `json:"dropout_rate"`      // For Dropout
+	BatchNorm        bool             `json:"batch_norm"`        // Apply batch normalization
+	BatchNormParams  *BatchNormParams `json:"batch_norm_params"` // Parameters for BatchNorm
+	Attention        bool             `json:"attention"`         // Apply attention mechanism
+	AttentionWeights []float64        `json:"attention_weights"` // Weights for Attention
+	Kernels          [][]float64      `json:"kernels"`           // Multiple kernels for CNN neurons
 	// Additional fields for LSTM
 	CellState   float64              // For LSTM cell state
 	GateWeights map[string][]float64 // Weights for LSTM gates
 
-	NeighborhoodIDs []int  `json:"neighborhood"` // IDs of neighboring neurons (for NCA)
-	UpdateRules     string `json:"update_rules"` // Rules for updating (e.g., Sum, Average)
+	// Fields for NCA Neurons
+	NeighborhoodIDs []int     `json:"neighborhood"` // IDs of neighboring neurons (for NCA)
+	UpdateRules     string    `json:"update_rules"` // Rules for updating (e.g., Sum, Average)
+	NCAState        []float64 `json:"nca_state"`    // Internal state for NCA neurons
 }
 
 // ProcessNeuron processes a single neuron based on its type
@@ -170,7 +182,12 @@ func (bp *Blueprint) ApplyDropout(neuron *Neuron) {
 
 // ApplyBatchNormalization normalizes the neuron's value
 func (bp *Blueprint) ApplyBatchNormalization(neuron *Neuron, mean, variance float64) {
-	neuron.Value = (neuron.Value - mean) / math.Sqrt(variance+1e-7)
+	if neuron.BatchNormParams == nil {
+		fmt.Printf("BatchNorm Neuron %d: BatchNormParams not initialized. Skipping normalization.\n", neuron.ID)
+		return
+	}
+	neuron.Value = (neuron.Value - neuron.BatchNormParams.Mean) / math.Sqrt(neuron.BatchNormParams.Var+1e-7)
+	neuron.Value = neuron.Value*neuron.BatchNormParams.Gamma + neuron.BatchNormParams.Beta
 	fmt.Printf("BatchNorm Neuron %d: Normalized Value=%f\n", neuron.ID, neuron.Value)
 }
 
@@ -187,7 +204,6 @@ func (bp *Blueprint) ApplyAttention(neuron *Neuron, inputs []float64, attentionW
 
 // ComputeAttentionWeights computes attention weights for the given inputs
 func (bp *Blueprint) ComputeAttentionWeights(neuron *Neuron, inputs []float64) []float64 {
-
 	// Simple scaled dot-product attention
 	queries := inputs
 	keys := inputs
@@ -225,6 +241,7 @@ func (bp *Blueprint) ApplySoftmax() {
 	}
 }
 
+// ProcessNCANeuron processes an NCA neuron based on its neighborhood and update rules
 func (bp *Blueprint) ProcessNCANeuron(neuron *Neuron) {
 	// Gather values from neighboring neurons
 	neighborValues := []float64{}
@@ -246,7 +263,9 @@ func (bp *Blueprint) ProcessNCANeuron(neuron *Neuron) {
 		for _, value := range neighborValues {
 			sum += value
 		}
-		newValue = sum / float64(len(neighborValues))
+		if len(neighborValues) > 0 {
+			newValue = sum / float64(len(neighborValues))
+		}
 	default:
 		fmt.Printf("Unknown update rule for NCA Neuron %d\n", neuron.ID)
 		return
@@ -257,10 +276,42 @@ func (bp *Blueprint) ProcessNCANeuron(neuron *Neuron) {
 	fmt.Printf("NCA Neuron %d: Value=%f\n", neuron.ID, neuron.Value)
 }
 
+// InitializeKernel initializes a kernel with random weights
 func (bp *Blueprint) InitializeKernel(kernelSize int) []float64 {
 	kernel := make([]float64, kernelSize)
 	for i := range kernel {
 		kernel[i] = rand.Float64() // Initialize with random weights between 0 and 1
 	}
 	return kernel
+}
+
+// multiply multiplies two slices element-wise
+func (bp *Blueprint) multiply(a, b []float64) []float64 {
+	minLen := len(a)
+	if len(b) < minLen {
+		minLen = len(b)
+	}
+	result := make([]float64, minLen)
+	for i := 0; i < minLen; i++ {
+		result[i] = a[i] * b[i]
+	}
+	return result
+}
+
+// sum computes the sum of a slice of float64
+func (bp *Blueprint) sum(a []float64) float64 {
+	total := 0.0
+	for _, v := range a {
+		total += v
+	}
+	return total
+}
+
+// sqrt computes the square root, handling negative inputs
+func (bp *Blueprint) sqrt(a float64) float64 {
+	if a < 0 {
+		fmt.Printf("Warning: sqrt received negative value %f. Returning 0.\n", a)
+		return 0.0
+	}
+	return math.Sqrt(a)
 }

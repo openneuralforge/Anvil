@@ -24,6 +24,8 @@ func NewBlueprint() *Blueprint {
 	}
 }
 
+// blueprint.go
+
 // LoadNeurons loads neurons from a JSON string
 func (bp *Blueprint) LoadNeurons(jsonData string) error {
 	var rawNeurons []json.RawMessage
@@ -75,6 +77,25 @@ func (bp *Blueprint) LoadNeurons(jsonData string) error {
 				fmt.Printf("CNN Neuron %d: Activation not provided. Set to 'relu'.\n", cnnNeuron.ID)
 			}
 			bp.Neurons[cnnNeuron.ID] = &cnnNeuron
+
+		case "batch_norm":
+			var bnNeuron Neuron
+			if err := json.Unmarshal(rawNeuron, &bnNeuron); err != nil {
+				return err
+			}
+			// Initialize BatchNormParams
+			bnNeuron.BatchNormParams = &BatchNormParams{
+				Gamma: 1.0,
+				Beta:  0.0,
+				Mean:  0.0,
+				Var:   1.0,
+			}
+			// Ensure activation is set; default to "linear" if not provided
+			if bnNeuron.Activation == "" {
+				bnNeuron.Activation = "linear"
+				fmt.Printf("BatchNorm Neuron %d: Activation not provided. Set to 'linear'.\n", bnNeuron.ID)
+			}
+			bp.Neurons[bnNeuron.ID] = &bnNeuron
 
 		default:
 			var neuron Neuron
