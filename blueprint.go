@@ -15,6 +15,66 @@ type Blueprint struct {
 	ScalarActivationMap map[string]ActivationFunc
 }
 
+// ModelMetadata holds metadata, evaluation benchmarks, and additional information for models in the AI framework.
+type ModelMetadata struct {
+	// Basic model information
+	ModelID           string   `json:"modelID"`
+	ProjectName       string   `json:"projectName"`
+	Description       string   `json:"description,omitempty"` // Optional description for the model
+	ParentModelIDs    []string `json:"parentModelIDs"`
+	ChildModelIDs     []string `json:"childModelIDs"`
+	CreationTimestamp string   `json:"creationTimestamp"`
+	LastModified      string   `json:"lastModified"`
+
+	// Neuron and layer information
+	TotalNeurons int64   `json:"totalNeurons"`
+	TotalLayers  int64   `json:"totalLayers"`
+	LayerRange   [2]int  `json:"layerRange"`  // Min and max layers
+	NeuronRange  [2]int  `json:"neuronRange"` // Min and max neurons per layer
+
+	// Accuracy and error metrics
+	LastTrainingAccuracy            float64 `json:"lastTrainingAccuracy"`
+	LastTestAccuracy                float64 `json:"lastTestAccuracy"`
+	LastTestAccuracyGenerous        float64 `json:"lastTestAccuracyGenerous"`
+	LastTestAccuracyForgiveness     float64 `json:"lastTestAccuracyForgiveness"`
+	ForgivenessThreshold            float64 `json:"forgivenessThreshold"`
+	LastTrainingExactErrorCount     int64   `json:"lastTrainingExactErrorCount"`
+	LastTestExactErrorCount         int64   `json:"lastTestExactErrorCount"`
+	LastTrainingAverageGenerousError float64 `json:"lastTrainingAverageGenerousError"`
+	LastTestAverageGenerousError    float64 `json:"lastTestAverageGenerousError"`
+	LastTrainingForgivenessErrorCount int64 `json:"lastTrainingForgivenessErrorCount"`
+	LastTestForgivenessErrorCount   int64   `json:"lastTestForgivenessErrorCount"`
+
+	// Training and testing session information
+	//TrainingSessions []TrainingSession `json:"trainingSessions"`
+	//TestingSessions  []TestingSession  `json:"testingSessions"`
+
+	// Evaluation and performance benchmarks
+	//BenchmarkResults BenchmarkResults `json:"benchmarkResults"`
+	Evaluated        bool             `json:"evaluated"`
+	Path             string           `json:"path"`
+
+	// Model mutation and adjustment settings
+	PossibleMutations          []string `json:"possibleMutations"`
+	BiasAdjustmentIncrement    float64  `json:"biasAdjustmentIncrement"`
+	WeightAdjustmentIncrement  float64  `json:"weightAdjustmentIncrement"`
+
+	// Advanced metadata
+	OptimizedFor         string   `json:"optimizedFor,omitempty"`   // E.g., "speed", "accuracy", "efficiency"
+	CompatibleEnvironments []string `json:"compatibleEnvironments"` // Supported deployment environments (e.g., "desktop", "web", "cloud")
+	Tags                 []string `json:"tags,omitempty"`          // Tags for categorizing models
+
+	// Extended neuron and processing information
+	NeuronTypes         []string `json:"neuronTypes"`               // List of neuron types used (e.g., Dense, CNN, RNN)
+	AttentionMechanisms bool     `json:"attentionMechanisms"`       // Whether attention mechanisms are included
+	DropoutUsed         bool     `json:"dropoutUsed"`               // Whether dropout layers are used
+
+	// Resource requirements
+	EstimatedMemoryUsage   string `json:"estimatedMemoryUsage,omitempty"`   // Approximate memory usage
+	EstimatedComputeTime   string `json:"estimatedComputeTime,omitempty"`   // Estimated compute time for typical runs
+}
+
+
 // NewBlueprint initializes a new Blueprint
 func NewBlueprint() *Blueprint {
 	return &Blueprint{
