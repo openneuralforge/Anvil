@@ -55,3 +55,8 @@ func Linear(x float64) float64 {
 func InitializeActivationFunctions() map[string]ActivationFunc {
 	return scalarActivationFunctions
 }
+
+// InitializeActivationFunctions initializes the ScalarActivationMap
+func (bp *Blueprint) InitializeActivationFunctions() {
+	bp.ScalarActivationMap = InitializeActivationFunctions()
+}

@@ -1,6 +1,8 @@
 package blueprint
 
-import "math"
+import (
+	"math"
+)
 
 // Softmax activation function (applied across a slice)
 func Softmax(inputs []float64) []float64 {

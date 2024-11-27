@@ -7,15 +7,7 @@ import (
 )
 
 // InsertNeuronOfTypeBetweenInputsAndOutputs inserts a new neuron of the specified type
-// between all input and output nodes. It updates the connections such that inputs connect
-// to the new neuron, and the new neuron connects to the outputs. Existing direct connections
-// from inputs to outputs are removed.
-//
-// Parameters:
-// - neuronType: The type of neuron to insert (e.g., "dense", "rnn", "lstm", "cnn", etc.).
-//
-// Returns:
-// - An error if the insertion fails.
+// between all input and output nodes without removing existing connections.
 func (bp *Blueprint) InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType string) error {
 	// Validate the neuron type
 	if !bp.isValidNeuronType(neuronType) {
@@ -38,42 +30,22 @@ func (bp *Blueprint) InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType string
 	bp.Neurons[newNeuronID] = newNeuron
 	fmt.Printf("Inserted new Neuron with ID %d of type '%s' between inputs and outputs.\n", newNeuronID, neuronType)
 
-	// Iterate over each output node to update connections
+	// Connect input nodes to the new neuron
+	for _, inputID := range bp.InputNodes {
+		// Assign a random weight between -1 and 1
+		weight := rand.Float64()*2 - 1
+		newConnection := []float64{float64(inputID), weight}
+		newNeuron.Connections = append(newNeuron.Connections, newConnection)
+		fmt.Printf("Connected Input Neuron %d to New Neuron %d with weight %.4f.\n", inputID, newNeuronID, weight)
+	}
+
+	// Connect the new neuron to each output neuron without removing existing connections
 	for _, outputID := range bp.OutputNodes {
 		outputNeuron, exists := bp.Neurons[outputID]
 		if !exists {
 			fmt.Printf("Warning: Output Neuron with ID %d does not exist.\n", outputID)
 			continue
 		}
-
-		// Find and remove connections from input nodes to this output neuron
-		var updatedConnections [][]float64
-		var connectionsToRemove [][]float64
-		for _, conn := range outputNeuron.Connections {
-			sourceID := int(conn[0])
-			if bp.isInputNode(sourceID) {
-				connectionsToRemove = append(connectionsToRemove, conn)
-			} else {
-				updatedConnections = append(updatedConnections, conn)
-			}
-		}
-
-		// Remove connections from input nodes to output neuron
-		if len(connectionsToRemove) > 0 {
-			outputNeuron.Connections = updatedConnections
-			fmt.Printf("Removed %d connections from input nodes to Output Neuron %d.\n", len(connectionsToRemove), outputID)
-		}
-
-		// Connect input nodes to the new neuron
-		for _, inputID := range bp.InputNodes {
-			// Assign a random weight between -1 and 1
-			weight := rand.Float64()*2 - 1
-			newConnection := []float64{float64(inputID), weight}
-			newNeuron.Connections = append(newNeuron.Connections, newConnection)
-			fmt.Printf("Connected Input Neuron %d to New Neuron %d with weight %.4f.\n", inputID, newNeuronID, weight)
-		}
-
-		// Connect the new neuron to the output neuron
 		weight := rand.Float64()*2 - 1
 		newConnection := []float64{float64(newNeuronID), weight}
 		outputNeuron.Connections = append(outputNeuron.Connections, newConnection)
@@ -90,7 +62,6 @@ func (bp *Blueprint) InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType string
 		bp.initializeBatchNormFields(newNeuron)
 		// Add cases for other neuron types as needed
 	}
-	// Add similar initializations for other neuron types if needed
 
 	return nil
 }
