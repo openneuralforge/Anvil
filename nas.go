@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 )
 
@@ -86,57 +87,147 @@ func (bp *Blueprint) Clone() *Blueprint {
 	return &newBP
 }
 
-// DeepCopy creates a deep copy of a Neuron
-func (neuron *Neuron) DeepCopy() *Neuron {
-	newNeuron := *neuron // Shallow copy
+// SimpleNASWithoutCrossover performs a basic neural architecture search by incrementally adding one neuron at a time
+// and keeping the change if it improves the model's evaluation on any of the specified evaluation metrics.
+func (bp *Blueprint) SimpleNASWithoutCrossover(
+	sessions []Session,
+	maxIterations int,
+	forgivenessThreshold float64,
+	neuronTypes []string,
+	metricsToOptimize []string,
+) {
+	// Seed the random number generator
+	rand.Seed(time.Now().UnixNano())
 
-	// Deep copy slices and maps within neuron
-	if neuron.Connections != nil {
-		newNeuron.Connections = make([][]float64, len(neuron.Connections))
-		for i, conn := range neuron.Connections {
-			newConn := make([]float64, len(conn))
-			copy(newConn, conn)
-			newNeuron.Connections[i] = newConn
+	// Validate and normalize metricsToOptimize
+	validMetrics := map[string]bool{
+		"exact":       true,
+		"generous":    true,
+		"forgiveness": true,
+	}
+	selectedMetrics := make(map[string]bool)
+	for _, metric := range metricsToOptimize {
+		metricLower := strings.ToLower(metric)
+		if _, exists := validMetrics[metricLower]; exists {
+			selectedMetrics[metricLower] = true
+		} else {
+			fmt.Printf("Warning: Invalid metric '%s' ignored.\n", metric)
 		}
 	}
 
-	if neuron.GateWeights != nil {
-		newNeuron.GateWeights = make(map[string][]float64)
-		for gate, weights := range neuron.GateWeights {
-			newWeights := make([]float64, len(weights))
-			copy(newWeights, weights)
-			newNeuron.GateWeights[gate] = newWeights
+	if len(selectedMetrics) == 0 {
+		fmt.Println("No valid metrics specified for optimization. Exiting NAS.")
+		return
+	}
+
+	// Evaluate the initial model
+	initialExact, initialGenerous, initialForgiveness, _, _, _ := bp.EvaluateModelPerformance(sessions, forgivenessThreshold)
+	fmt.Printf("Initial model performance: Exact=%.2f%%, Generous=%.2f%%, Forgiveness=%.2f%%\n",
+		initialExact, initialGenerous, initialForgiveness)
+
+	// Initialize best metrics based on selectedMetrics
+	bestExact, bestGenerous, bestForgiveness := initialExact, initialGenerous, initialForgiveness
+
+	for iteration := 1; iteration <= maxIterations; iteration++ {
+		fmt.Printf("Iteration %d\n", iteration)
+
+		// Clone the current blueprint
+		candidateBlueprint := bp.Clone()
+		if candidateBlueprint == nil {
+			fmt.Println("Cloning failed. Skipping iteration.")
+			continue
+		}
+
+		// Randomly select a neuron type to insert
+		neuronType := neuronTypes[rand.Intn(len(neuronTypes))]
+
+		// Insert a neuron of the selected type
+		err := candidateBlueprint.InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType)
+		if err != nil {
+			fmt.Printf("Iteration %d: Failed to insert neuron of type '%s': %v\n", iteration, neuronType, err)
+			continue
+		}
+
+		// Evaluate the candidate model
+		exactAcc, generousAcc, forgivenessAcc, _, _, _ := candidateBlueprint.EvaluateModelPerformance(sessions, forgivenessThreshold)
+
+		// Determine if there's an improvement based on selected metrics
+		improved := false
+		for metric := range selectedMetrics {
+			switch metric {
+			case "exact":
+				if exactAcc > bestExact {
+					improved = true
+				}
+			case "generous":
+				if generousAcc > bestGenerous {
+					improved = true
+				}
+			case "forgiveness":
+				if forgivenessAcc > bestForgiveness {
+					improved = true
+				}
+			}
+		}
+
+		if improved {
+			// Update the best model
+			*bp = *candidateBlueprint
+			if selectedMetrics["exact"] && exactAcc > bestExact {
+				bestExact = exactAcc
+			}
+			if selectedMetrics["generous"] && generousAcc > bestGenerous {
+				bestGenerous = generousAcc
+			}
+			if selectedMetrics["forgiveness"] && forgivenessAcc > bestForgiveness {
+				bestForgiveness = forgivenessAcc
+			}
+
+			// Log the improvement
+			improvementLog := "Iteration %d: Improved model found! "
+			args := []interface{}{iteration}
+			if selectedMetrics["exact"] {
+				improvementLog += "Exact=%.2f%%, "
+				args = append(args, exactAcc)
+			}
+			if selectedMetrics["generous"] {
+				improvementLog += "Generous=%.2f%%, "
+				args = append(args, generousAcc)
+			}
+			if selectedMetrics["forgiveness"] {
+				improvementLog += "Forgiveness=%.2f%%, "
+				args = append(args, forgivenessAcc)
+			}
+			// Remove trailing comma and space
+			improvementLog = strings.TrimSuffix(improvementLog, ", ")
+			fmt.Printf(improvementLog+"\n", args...)
+		} else {
+			fmt.Printf("Iteration %d: No improvement.\n", iteration)
+		}
+
+		// Early stopping if any selected metric reaches 100%
+		perfect := false
+		for metric := range selectedMetrics {
+			switch metric {
+			case "exact":
+				if bestExact == 100.0 {
+					perfect = true
+				}
+			case "generous":
+				if bestGenerous == 100.0 {
+					perfect = true
+				}
+			case "forgiveness":
+				if bestForgiveness == 100.0 {
+					perfect = true
+				}
+			}
+		}
+		if perfect {
+			fmt.Println("Perfect accuracy achieved on one of the selected metrics. Stopping NAS.")
+			break
 		}
 	}
 
-	if neuron.BatchNormParams != nil {
-		newParams := *neuron.BatchNormParams
-		newNeuron.BatchNormParams = &newParams
-	}
-
-	if neuron.Kernels != nil {
-		newNeuron.Kernels = make([][]float64, len(neuron.Kernels))
-		for i, kernel := range neuron.Kernels {
-			newKernel := make([]float64, len(kernel))
-			copy(newKernel, kernel)
-			newNeuron.Kernels[i] = newKernel
-		}
-	}
-
-	if neuron.NCAState != nil {
-		newNeuron.NCAState = make([]float64, len(neuron.NCAState))
-		copy(newNeuron.NCAState, neuron.NCAState)
-	}
-
-	if neuron.AttentionWeights != nil {
-		newNeuron.AttentionWeights = make([]float64, len(neuron.AttentionWeights))
-		copy(newNeuron.AttentionWeights, neuron.AttentionWeights)
-	}
-
-	if neuron.NeighborhoodIDs != nil {
-		newNeuron.NeighborhoodIDs = make([]int, len(neuron.NeighborhoodIDs))
-		copy(newNeuron.NeighborhoodIDs, neuron.NeighborhoodIDs)
-	}
-
-	return &newNeuron
+	fmt.Println("SimpleNASWithoutCrossover training completed.")
 }
