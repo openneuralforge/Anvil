@@ -306,7 +306,8 @@ func (bp *Blueprint) SimpleNASWithRandomConnections(
 		exactAccuracy, generousAccuracy, forgivenessAccuracy, _, _, _ := candidateBlueprint.EvaluateModelPerformance(sessions, forgivenessThreshold)
 
 		// Check if the candidate model improves on any of the three metrics
-		if exactAccuracy > bestExactAccuracy || generousAccuracy > bestGenerousAccuracy || forgivenessAccuracy > bestForgivenessAccuracy {
+		if exactAccuracy > bestExactAccuracy ||
+			(exactAccuracy == bestExactAccuracy && (generousAccuracy > bestGenerousAccuracy || forgivenessAccuracy > bestForgivenessAccuracy)) {
 			// Update the best model
 			bestBlueprint = candidateBlueprint
 			bestExactAccuracy = exactAccuracy
