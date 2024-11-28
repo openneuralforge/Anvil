@@ -62,7 +62,9 @@ func (bp *Blueprint) ProcessNeuron(neuron *Neuron, inputs []float64, timestep in
 		bp.ApplyBatchNormalization(neuron, 0.0, 1.0) // Example mean/variance
 	case "attention":
 		// Handled separately in Forward method
-		fmt.Printf("Attention Neuron %d processed\n", neuron.ID)
+		if bp.Debug {
+			fmt.Printf("Attention Neuron %d processed\n", neuron.ID)
+		}
 	default:
 		// Default dense neuron behavior
 		bp.ProcessDenseNeuron(neuron, inputs)
@@ -76,7 +78,9 @@ func (bp *Blueprint) ProcessDenseNeuron(neuron *Neuron, inputs []float64) {
 		sum += input
 	}
 	neuron.Value = bp.ApplyScalarActivation(sum, neuron.Activation)
-	fmt.Printf("Dense Neuron %d: Value=%f\n", neuron.ID, neuron.Value)
+	if bp.Debug {
+		fmt.Printf("Dense Neuron %d: Value=%f\n", neuron.ID, neuron.Value)
+	}
 }
 
 // ProcessRNNNeuron updates an RNN neuron over multiple time steps
@@ -89,7 +93,9 @@ func (bp *Blueprint) ProcessRNNNeuron(neuron *Neuron, inputs []float64) {
 	// Add weighted previous value (assuming weight of 1.0 for simplicity)
 	sum += neuron.Value * 1.0
 	neuron.Value = bp.ApplyScalarActivation(sum, neuron.Activation)
-	fmt.Printf("RNN Neuron %d: Value=%f\n", neuron.ID, neuron.Value)
+	if bp.Debug {
+		fmt.Printf("RNN Neuron %d: Value=%f\n", neuron.ID, neuron.Value)
+	}
 }
 
 // ProcessLSTMNeuron updates an LSTM neuron with gating
@@ -121,14 +127,17 @@ func (bp *Blueprint) ProcessLSTMNeuron(neuron *Neuron, inputs []float64) {
 	// Update cell state and output
 	neuron.CellState = neuron.CellState*forgetGate + cellInput*inputGate
 	neuron.Value = Tanh(neuron.CellState) * outputGate
-
-	fmt.Printf("LSTM Neuron %d: Value=%f, CellState=%f\n", neuron.ID, neuron.Value, neuron.CellState)
+	if bp.Debug {
+		fmt.Printf("LSTM Neuron %d: Value=%f, CellState=%f\n", neuron.ID, neuron.Value, neuron.CellState)
+	}
 }
 
 // ProcessCNNNeuron applies convolutional behavior using the neuron's predefined kernels
 func (bp *Blueprint) ProcessCNNNeuron(neuron *Neuron, inputs []float64) {
 	if len(neuron.Kernels) == 0 {
-		fmt.Printf("CNN Neuron %d: No kernels defined. Setting value to 0.\n", neuron.ID)
+		if bp.Debug {
+			fmt.Printf("CNN Neuron %d: No kernels defined. Setting value to 0.\n", neuron.ID)
+		}
 		neuron.Value = 0.0
 		return
 	}
@@ -138,7 +147,9 @@ func (bp *Blueprint) ProcessCNNNeuron(neuron *Neuron, inputs []float64) {
 	for k, kernel := range neuron.Kernels {
 		kernelSize := len(kernel)
 		if len(inputs) < kernelSize {
-			fmt.Printf("CNN Neuron %d: Skipping kernel %d due to insufficient inputs (required: %d, got: %d)\n", neuron.ID, k, kernelSize, len(inputs))
+			if bp.Debug {
+				fmt.Printf("CNN Neuron %d: Skipping kernel %d due to insufficient inputs (required: %d, got: %d)\n", neuron.ID, k, kernelSize, len(inputs))
+			}
 			continue
 		}
 
@@ -150,13 +161,17 @@ func (bp *Blueprint) ProcessCNNNeuron(neuron *Neuron, inputs []float64) {
 			}
 			activatedValue := bp.ApplyScalarActivation(sum, neuron.Activation)
 			convolutionOutputs = append(convolutionOutputs, activatedValue)
-			fmt.Printf("CNN Neuron %d: Kernel %d Output[%d]=%f\n", neuron.ID, k, i, activatedValue)
+			if bp.Debug {
+				fmt.Printf("CNN Neuron %d: Kernel %d Output[%d]=%f\n", neuron.ID, k, i, activatedValue)
+			}
 		}
 	}
 
 	// Handle cases where no valid convolution outputs were generated
 	if len(convolutionOutputs) == 0 {
-		fmt.Printf("CNN Neuron %d: No valid convolution outputs. Setting value to 0.\n", neuron.ID)
+		if bp.Debug {
+			fmt.Printf("CNN Neuron %d: No valid convolution outputs. Setting value to 0.\n", neuron.ID)
+		}
 		neuron.Value = 0.0
 		return
 	}
@@ -167,28 +182,38 @@ func (bp *Blueprint) ProcessCNNNeuron(neuron *Neuron, inputs []float64) {
 		aggregate += v
 	}
 	neuron.Value = aggregate / float64(len(convolutionOutputs))
-	fmt.Printf("CNN Neuron %d: Aggregated Value=%f\n", neuron.ID, neuron.Value)
+	if bp.Debug {
+		fmt.Printf("CNN Neuron %d: Aggregated Value=%f\n", neuron.ID, neuron.Value)
+	}
 }
 
 // ApplyDropout randomly zeroes out a neuron's value
 func (bp *Blueprint) ApplyDropout(neuron *Neuron) {
 	if rand.Float64() < neuron.DropoutRate {
 		neuron.Value = 0
-		fmt.Printf("Dropout Neuron %d: Value set to 0\n", neuron.ID)
+		if bp.Debug {
+			fmt.Printf("Dropout Neuron %d: Value set to 0\n", neuron.ID)
+		}
 	} else {
-		fmt.Printf("Dropout Neuron %d: Value retained as %f\n", neuron.ID, neuron.Value)
+		if bp.Debug {
+			fmt.Printf("Dropout Neuron %d: Value retained as %f\n", neuron.ID, neuron.Value)
+		}
 	}
 }
 
 // ApplyBatchNormalization normalizes the neuron's value
 func (bp *Blueprint) ApplyBatchNormalization(neuron *Neuron, mean, variance float64) {
 	if neuron.BatchNormParams == nil {
-		fmt.Printf("BatchNorm Neuron %d: BatchNormParams not initialized. Skipping normalization.\n", neuron.ID)
+		if bp.Debug {
+			fmt.Printf("BatchNorm Neuron %d: BatchNormParams not initialized. Skipping normalization.\n", neuron.ID)
+		}
 		return
 	}
 	neuron.Value = (neuron.Value - neuron.BatchNormParams.Mean) / math.Sqrt(neuron.BatchNormParams.Var+1e-7)
 	neuron.Value = neuron.Value*neuron.BatchNormParams.Gamma + neuron.BatchNormParams.Beta
-	fmt.Printf("BatchNorm Neuron %d: Normalized Value=%f\n", neuron.ID, neuron.Value)
+	if bp.Debug {
+		fmt.Printf("BatchNorm Neuron %d: Normalized Value=%f\n", neuron.ID, neuron.Value)
+	}
 }
 
 // ApplyAttention adjusts neuron values based on attention weights
@@ -199,7 +224,9 @@ func (bp *Blueprint) ApplyAttention(neuron *Neuron, inputs []float64, attentionW
 		sum += input * attentionWeights[i]
 	}
 	neuron.Value = bp.ApplyScalarActivation(sum, neuron.Activation)
-	fmt.Printf("Attention Neuron %d: Value=%f\n", neuron.ID, neuron.Value)
+	if bp.Debug {
+		fmt.Printf("Attention Neuron %d: Value=%f\n", neuron.ID, neuron.Value)
+	}
 }
 
 // ComputeAttentionWeights computes attention weights for the given inputs
@@ -216,7 +243,9 @@ func (bp *Blueprint) ComputeAttentionWeights(neuron *Neuron, inputs []float64) [
 
 	// Apply softmax to get weights
 	attentionWeights := Softmax(scores)
-	fmt.Printf("Attention Neuron %d: Weights=%v\n", neuron.ID, attentionWeights)
+	if bp.Debug {
+		fmt.Printf("Attention Neuron %d: Weights=%v\n", neuron.ID, attentionWeights)
+	}
 	return attentionWeights
 }
 
@@ -236,7 +265,9 @@ func (bp *Blueprint) ApplySoftmax() {
 	for i, id := range bp.OutputNodes {
 		if neuron, exists := bp.Neurons[id]; exists {
 			neuron.Value = softmaxValues[i]
-			fmt.Printf("Softmax Applied to Neuron %d: Value=%f\n", id, neuron.Value)
+			if bp.Debug {
+				fmt.Printf("Softmax Applied to Neuron %d: Value=%f\n", id, neuron.Value)
+			}
 		}
 	}
 }
@@ -267,13 +298,17 @@ func (bp *Blueprint) ProcessNCANeuron(neuron *Neuron) {
 			newValue = sum / float64(len(neighborValues))
 		}
 	default:
-		fmt.Printf("Unknown update rule for NCA Neuron %d\n", neuron.ID)
+		if bp.Debug {
+			fmt.Printf("Unknown update rule for NCA Neuron %d\n", neuron.ID)
+		}
 		return
 	}
 
 	// Apply activation function
 	neuron.Value = bp.ApplyScalarActivation(newValue+neuron.Bias, neuron.Activation)
-	fmt.Printf("NCA Neuron %d: Value=%f\n", neuron.ID, neuron.Value)
+	if bp.Debug {
+		fmt.Printf("NCA Neuron %d: Value=%f\n", neuron.ID, neuron.Value)
+	}
 }
 
 // InitializeKernel initializes a kernel with random weights

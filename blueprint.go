@@ -13,6 +13,7 @@ type Blueprint struct {
 	InputNodes          []int                     `json:"input_nodes"`
 	OutputNodes         []int                     `json:"output_nodes"`
 	ScalarActivationMap map[string]ActivationFunc `json:"-"`
+	Debug               bool                      `json:"-"`
 }
 
 // ModelMetadata holds metadata, evaluation benchmarks, and additional information for models in the AI framework.
@@ -91,6 +92,7 @@ func NewBlueprint() *Blueprint {
 
 // LoadNeurons loads neurons from a JSON string
 func (bp *Blueprint) LoadNeurons(jsonData string) error {
+
 	var rawNeurons []json.RawMessage
 	if err := json.Unmarshal([]byte(jsonData), &rawNeurons); err != nil {
 		return err
@@ -132,12 +134,16 @@ func (bp *Blueprint) LoadNeurons(jsonData string) error {
 					{0.2, 0.5}, // Default Kernel 0
 					{0.3, 0.4}, // Default Kernel 1
 				}
-				fmt.Printf("CNN Neuron %d: No kernels provided. Initialized with default kernels.\n", cnnNeuron.ID)
+				if bp.Debug {
+					fmt.Printf("CNN Neuron %d: No kernels provided. Initialized with default kernels.\n", cnnNeuron.ID)
+				}
 			}
 			// Ensure activation is set to "relu"; if not, default to "relu"
 			if cnnNeuron.Activation == "" {
 				cnnNeuron.Activation = "relu"
-				fmt.Printf("CNN Neuron %d: Activation not provided. Set to 'relu'.\n", cnnNeuron.ID)
+				if bp.Debug {
+					fmt.Printf("CNN Neuron %d: Activation not provided. Set to 'relu'.\n", cnnNeuron.ID)
+				}
 			}
 			bp.Neurons[cnnNeuron.ID] = &cnnNeuron
 
@@ -156,7 +162,9 @@ func (bp *Blueprint) LoadNeurons(jsonData string) error {
 			// Ensure activation is set; default to "linear" if not provided
 			if bnNeuron.Activation == "" {
 				bnNeuron.Activation = "linear"
-				fmt.Printf("BatchNorm Neuron %d: Activation not provided. Set to 'linear'.\n", bnNeuron.ID)
+				if bp.Debug {
+					fmt.Printf("BatchNorm Neuron %d: Activation not provided. Set to 'linear'.\n", bnNeuron.ID)
+				}
 			}
 			bp.Neurons[bnNeuron.ID] = &bnNeuron
 
@@ -177,7 +185,9 @@ func (bp *Blueprint) LoadNeurons(jsonData string) error {
 			// Ensure activation is set; default to "linear" if not provided
 			if neuron.Activation == "" {
 				neuron.Activation = "linear"
-				fmt.Printf("Neuron %d: Activation not provided. Set to 'linear'.\n", neuron.ID)
+				if bp.Debug {
+					fmt.Printf("Neuron %d: Activation not provided. Set to 'linear'.\n", neuron.ID)
+				}
 			}
 			bp.Neurons[neuron.ID] = &neuron
 		}
@@ -211,7 +221,9 @@ func (bp *Blueprint) ApplyScalarActivation(value float64, activation string) flo
 		return actFunc(value)
 	}
 	// Log a warning and use linear activation
-	fmt.Printf("Warning: Undefined activation '%s'. Using linear activation.\n", activation)
+	if bp.Debug {
+		fmt.Printf("Warning: Undefined activation '%s'. Using linear activation.\n", activation)
+	}
 	return Linear(value)
 }
 
@@ -221,13 +233,17 @@ func (bp *Blueprint) Forward(inputs map[int]float64, timesteps int) {
 	for id, value := range inputs {
 		if neuron, exists := bp.Neurons[id]; exists {
 			neuron.Value = value
-			fmt.Printf("Input Neuron %d set to %f\n", id, value)
+			if bp.Debug {
+				fmt.Printf("Input Neuron %d set to %f\n", id, value)
+			}
 		}
 	}
 
 	// Process neurons over timesteps for recurrent networks
 	for t := 0; t < timesteps; t++ {
-		fmt.Printf("=== Timestep %d ===\n", t)
+		if bp.Debug {
+			fmt.Printf("=== Timestep %d ===\n", t)
+		}
 		// Process neurons in order of IDs for simplicity
 		for id := 1; id <= len(bp.Neurons); id++ {
 			neuron, exists := bp.Neurons[id]
@@ -267,10 +283,12 @@ func (bp *Blueprint) Forward(inputs map[int]float64, timesteps int) {
 // RunNetwork runs the neural network with given inputs and timesteps
 func (bp *Blueprint) RunNetwork(inputs map[int]float64, timesteps int) {
 	bp.Forward(inputs, timesteps)
-	outputs := bp.GetOutputs()
-	fmt.Println("Final Outputs:")
-	for id, value := range outputs {
-		fmt.Printf("Neuron %d: %f\n", id, value)
+	if bp.Debug {
+		outputs := bp.GetOutputs()
+		fmt.Println("Final Outputs:")
+		for id, value := range outputs {
+			fmt.Printf("Neuron %d: %f\n", id, value)
+		}
 	}
 }
 

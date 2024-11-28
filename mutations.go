@@ -28,15 +28,18 @@ func (bp *Blueprint) InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType string
 
 	// Add the new neuron to the Blueprint
 	bp.Neurons[newNeuronID] = newNeuron
-	fmt.Printf("Inserted new Neuron with ID %d of type '%s' between inputs and outputs.\n", newNeuronID, neuronType)
-
+	if bp.Debug {
+		fmt.Printf("Inserted new Neuron with ID %d of type '%s' between inputs and outputs.\n", newNeuronID, neuronType)
+	}
 	// Connect input nodes to the new neuron
 	for _, inputID := range bp.InputNodes {
 		// Assign a random weight between -1 and 1
 		weight := rand.Float64()*2 - 1
 		newConnection := []float64{float64(inputID), weight}
 		newNeuron.Connections = append(newNeuron.Connections, newConnection)
-		fmt.Printf("Connected Input Neuron %d to New Neuron %d with weight %.4f.\n", inputID, newNeuronID, weight)
+		if bp.Debug {
+			fmt.Printf("Connected Input Neuron %d to New Neuron %d with weight %.4f.\n", inputID, newNeuronID, weight)
+		}
 	}
 
 	// Connect the new neuron to each output neuron without removing existing connections
@@ -49,7 +52,9 @@ func (bp *Blueprint) InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType string
 		weight := rand.Float64()*2 - 1
 		newConnection := []float64{float64(newNeuronID), weight}
 		outputNeuron.Connections = append(outputNeuron.Connections, newConnection)
-		fmt.Printf("Connected New Neuron %d to Output Neuron %d with weight %.4f.\n", newNeuronID, outputID, weight)
+		if bp.Debug {
+			fmt.Printf("Connected New Neuron %d to Output Neuron %d with weight %.4f.\n", newNeuronID, outputID, weight)
+		}
 	}
 
 	// Initialize connection-dependent fields based on neuron type
@@ -81,36 +86,42 @@ func (bp *Blueprint) initializeLSTMWeights(neuron *Neuron) {
 		"output": bp.RandomWeights(numConnections),
 		"cell":   bp.RandomWeights(numConnections),
 	}
-
-	fmt.Printf("Initialized GateWeights for LSTM Neuron %d with %d connections.\n", neuron.ID, numConnections)
+	if bp.Debug {
+		fmt.Printf("Initialized GateWeights for LSTM Neuron %d with %d connections.\n", neuron.ID, numConnections)
+	}
 }
 
-// createNeuron initializes a neuron of the specified type with default or random values.
-// It handles neuron-specific field initializations that are independent of connections.
 func (bp *Blueprint) createNeuron(id int, neuronType string) (*Neuron, error) {
 	neuron := &Neuron{
-		ID:   id,
-		Type: neuronType,
-		//Value:       0.0,
-		//Bias:        0.0,
+		ID:          id,
+		Type:        neuronType,
 		Value:       rand.Float64()*2 - 1, // Random value between -1 and 1
 		Bias:        rand.Float64()*2 - 1, // Random bias between -1 and 1
 		Connections: [][]float64{},
-		Activation:  "linear", // Default activation; can be overridden
+		Activation:  "linear", // Default activation; will be overridden below
 	}
 
+	// Define possible activation functions
+	activationFunctions := []string{"relu", "sigmoid", "tanh", "leaky_relu", "linear"}
+
+	// Assign activation function based on type or randomly
 	switch neuronType {
 	case "dense":
-		neuron.Activation = "relu" // Default activation for dense neurons
+		neuron.Activation = activationFunctions[rand.Intn(len(activationFunctions))]
 	case "rnn":
-		neuron.Activation = "tanh"
+		neuron.Activation = activationFunctions[rand.Intn(len(activationFunctions))]
 	case "lstm":
-		neuron.Activation = "sigmoid"
-		// GateWeights will be initialized based on connections
-		// CellState is already initialized to 0.0 by default
+		neuron.Activation = activationFunctions[rand.Intn(len(activationFunctions))]
+		// Initialize gate weights for LSTM
+		neuron.GateWeights = map[string][]float64{
+			"input":  bp.RandomWeights(1), // Replace with actual connection size
+			"forget": bp.RandomWeights(1),
+			"output": bp.RandomWeights(1),
+			"cell":   bp.RandomWeights(1),
+		}
 	case "cnn":
-		neuron.Activation = "relu"
-		// Initialize default kernels if none are provided
+		neuron.Activation = activationFunctions[rand.Intn(len(activationFunctions))]
+		// Initialize default kernels
 		neuron.Kernels = [][]float64{
 			{0.2, 0.5},
 			{0.3, 0.4},
@@ -118,27 +129,26 @@ func (bp *Blueprint) createNeuron(id int, neuronType string) (*Neuron, error) {
 	case "dropout":
 		neuron.DropoutRate = 0.5 // Default dropout rate
 	case "batch_norm":
-
-		// Initialize batch normalization parameters
+		// Initialize BatchNormParams
 		neuron.BatchNormParams = &BatchNormParams{
 			Gamma: 1.0,
 			Beta:  0.0,
 			Mean:  0.0,
 			Var:   1.0,
 		}
-
+		neuron.Activation = activationFunctions[rand.Intn(len(activationFunctions))]
 	case "attention":
 		neuron.Attention = true
 		neuron.AttentionWeights = []float64{}
+		neuron.Activation = activationFunctions[rand.Intn(len(activationFunctions))]
 	case "nca":
-		neuron.Activation = "linear" // Or any appropriate activation for NCA
-		// Initialize NCA-specific fields
-		neuron.NCAState = make([]float64, 10) // Example: state vector of size 10
+		neuron.Activation = activationFunctions[rand.Intn(len(activationFunctions))]
+		neuron.NCAState = make([]float64, 10)
 		for i := range neuron.NCAState {
-			neuron.NCAState[i] = rand.Float64()*2 - 1 // Initialize between -1 and 1
+			neuron.NCAState[i] = rand.Float64()*2 - 1
 		}
 	default:
-		return nil, fmt.Errorf("unsupported neuron type: %s", neuronType)
+		neuron.Activation = activationFunctions[rand.Intn(len(activationFunctions))]
 	}
 
 	return neuron, nil
@@ -217,8 +227,9 @@ func (bp *Blueprint) initializeNCACustomFields(neuron *Neuron) {
 	neuron.NeighborhoodIDs = append(neuron.NeighborhoodIDs, bp.InputNodes...)
 	// Set a default update rule, e.g., "sum". This can be made configurable.
 	neuron.UpdateRules = "sum"
-
-	fmt.Printf("Initialized NCA-specific fields for NCA Neuron %d: NeighborhoodIDs=%v, UpdateRules=%s\n", neuron.ID, neuron.NeighborhoodIDs, neuron.UpdateRules)
+	if bp.Debug {
+		fmt.Printf("Initialized NCA-specific fields for NCA Neuron %d: NeighborhoodIDs=%v, UpdateRules=%s\n", neuron.ID, neuron.NeighborhoodIDs, neuron.UpdateRules)
+	}
 }
 
 // blueprint.go
@@ -242,10 +253,11 @@ func (bp *Blueprint) initializeBatchNormFields(neuron *Neuron) {
 
 	// Optionally, if you want to allow customization via JSON, you can check if values are provided
 	// For simplicity, we're using default values here
-
-	fmt.Printf("Initialized BatchNormParams for BatchNorm Neuron %d: Gamma=%.2f, Beta=%.2f, Mean=%.2f, Var=%.2f\n",
-		neuron.ID, neuron.BatchNormParams.Gamma, neuron.BatchNormParams.Beta,
-		neuron.BatchNormParams.Mean, neuron.BatchNormParams.Var)
+	if bp.Debug {
+		fmt.Printf("Initialized BatchNormParams for BatchNorm Neuron %d: Gamma=%.2f, Beta=%.2f, Mean=%.2f, Var=%.2f\n",
+			neuron.ID, neuron.BatchNormParams.Gamma, neuron.BatchNormParams.Beta,
+			neuron.BatchNormParams.Mean, neuron.BatchNormParams.Var)
+	}
 }
 
 // InsertNeuronWithRandomConnectionsAndReconnect modifies the network by:
@@ -272,7 +284,9 @@ func (bp *Blueprint) InsertNeuronWithRandomConnectionsAndReconnect(neuronType st
 
 	// Add the new neuron to the blueprint
 	bp.Neurons[newNeuronID] = newNeuron
-	fmt.Printf("Inserted new Neuron with ID %d of type '%s'.\n", newNeuronID, neuronType)
+	if bp.Debug {
+		fmt.Printf("Inserted new Neuron with ID %d of type '%s'.\n", newNeuronID, neuronType)
+	}
 
 	// Randomly connect the new neuron to other existing neurons
 	neuronIDs := bp.getAllNeuronIDs()
@@ -283,7 +297,9 @@ func (bp *Blueprint) InsertNeuronWithRandomConnectionsAndReconnect(neuronType st
 		targetID := neuronIDs[i]
 		weight := rand.Float64()*2 - 1 // Random weight between -1 and 1
 		newNeuron.Connections = append(newNeuron.Connections, []float64{float64(targetID), weight})
-		fmt.Printf("Connected Neuron %d to existing Neuron %d with weight %.4f.\n", newNeuronID, targetID, weight)
+		if bp.Debug {
+			fmt.Printf("Connected Neuron %d to existing Neuron %d with weight %.4f.\n", newNeuronID, targetID, weight)
+		}
 	}
 
 	// Add the new neuron to the list of "active" neurons for future connections
@@ -302,7 +318,9 @@ func (bp *Blueprint) InsertNeuronWithRandomConnectionsAndReconnect(neuronType st
 		for _, lastNeuronID := range lastNeurons {
 			weight := rand.Float64()*2 - 1
 			outputNeuron.Connections = append(outputNeuron.Connections, []float64{float64(lastNeuronID), weight})
-			fmt.Printf("Reconnected Output Neuron %d to Neuron %d with weight %.4f.\n", outputID, lastNeuronID, weight)
+			if bp.Debug {
+				fmt.Printf("Reconnected Output Neuron %d to Neuron %d with weight %.4f.\n", outputID, lastNeuronID, weight)
+			}
 		}
 	}
 
@@ -337,6 +355,7 @@ func getLastXNeurons(neuronIDs []int, x int) []int {
 	return neuronIDs[len(neuronIDs)-x:]
 }
 
+/*
 // InsertNeuronWithRandomConnections appends a new neuron to the network,
 // randomly connects it to 1-2 existing neurons, and reconnects the outputs to maintain structure.
 func (bp *Blueprint) InsertNeuronWithRandomConnections(neuronType string) error {
@@ -359,7 +378,9 @@ func (bp *Blueprint) InsertNeuronWithRandomConnections(neuronType string) error 
 
 	// Add the new neuron to the blueprint
 	bp.Neurons[newNeuronID] = newNeuron
-	fmt.Printf("Inserted new Neuron with ID %d of type '%s'.\n", newNeuronID, neuronType)
+	if bp.Debug {
+		fmt.Printf("Inserted new Neuron with ID %d of type '%s'.\n", newNeuronID, neuronType)
+	}
 
 	// Randomly connect the new neuron to 1-2 existing neurons
 	neuronIDs := bp.getAllNeuronIDs()
@@ -370,7 +391,9 @@ func (bp *Blueprint) InsertNeuronWithRandomConnections(neuronType string) error 
 		targetID := neuronIDs[i]
 		weight := rand.Float64()*2 - 1 // Random weight between -1 and 1
 		newNeuron.Connections = append(newNeuron.Connections, []float64{float64(targetID), weight})
-		fmt.Printf("Connected Neuron %d to existing Neuron %d with weight %.4f.\n", newNeuronID, targetID, weight)
+		if bp.Debug {
+			fmt.Printf("Connected Neuron %d to existing Neuron %d with weight %.4f.\n", newNeuronID, targetID, weight)
+		}
 	}
 
 	// Reconnect all output neurons to include the new neuron
@@ -383,7 +406,65 @@ func (bp *Blueprint) InsertNeuronWithRandomConnections(neuronType string) error 
 		weight := rand.Float64()*2 - 1
 		newConnection := []float64{float64(newNeuronID), weight}
 		outputNeuron.Connections = append(outputNeuron.Connections, newConnection)
-		fmt.Printf("Connected New Neuron %d to Output Neuron %d with weight %.4f.\n", newNeuronID, outputID, weight)
+		if bp.Debug {
+			fmt.Printf("Connected New Neuron %d to Output Neuron %d with weight %.4f.\n", newNeuronID, outputID, weight)
+		}
+	}
+
+	return nil
+}*/
+
+// InsertNeuronWithRandomConnections appends a new neuron to the network,
+// randomly connects it to 1-2 existing neurons, and ensures selective output connections.
+func (bp *Blueprint) InsertNeuronWithRandomConnections(neuronType string) error {
+	// Validate the neuron type
+	if !bp.isValidNeuronType(neuronType) {
+		return fmt.Errorf("invalid neuron type: %s", neuronType)
+	}
+
+	// Generate a unique ID for the new neuron
+	newNeuronID := bp.generateUniqueNeuronID()
+	if newNeuronID == -1 {
+		return fmt.Errorf("failed to generate a unique neuron ID")
+	}
+
+	// Create the new neuron
+	newNeuron, err := bp.createNeuron(newNeuronID, neuronType)
+	if err != nil {
+		return fmt.Errorf("failed to create neuron of type '%s': %v", neuronType, err)
+	}
+
+	// Add the new neuron to the blueprint
+	bp.Neurons[newNeuronID] = newNeuron
+	if bp.Debug {
+		fmt.Printf("Inserted new Neuron with ID %d of type '%s'.\n", newNeuronID, neuronType)
+	}
+
+	// Randomly connect the new neuron to 1-2 existing neurons
+	neuronIDs := bp.getAllNeuronIDs()
+	rand.Shuffle(len(neuronIDs), func(i, j int) { neuronIDs[i], neuronIDs[j] = neuronIDs[j], neuronIDs[i] })
+	numConnections := rand.Intn(2) + 1 // Randomly choose 1 or 2 connections
+
+	for i := 0; i < numConnections && i < len(neuronIDs); i++ {
+		targetID := neuronIDs[i]
+		weight := rand.Float64()*2 - 1 // Random weight between -1 and 1
+		newNeuron.Connections = append(newNeuron.Connections, []float64{float64(targetID), weight})
+		if bp.Debug {
+			fmt.Printf("Connected Neuron %d to existing Neuron %d with weight %.4f.\n", newNeuronID, targetID, weight)
+		}
+	}
+
+	// Selectively connect the new neuron to output neurons
+	if len(bp.OutputNodes) > 0 {
+		selectedOutputID := bp.OutputNodes[rand.Intn(len(bp.OutputNodes))] // Randomly select one output neuron
+		outputNeuron, exists := bp.Neurons[selectedOutputID]
+		if exists {
+			weight := rand.Float64()*2 - 1
+			outputNeuron.Connections = append(outputNeuron.Connections, []float64{float64(newNeuronID), weight})
+			if bp.Debug {
+				fmt.Printf("Connected New Neuron %d to Output Neuron %d with weight %.4f.\n", newNeuronID, selectedOutputID, weight)
+			}
+		}
 	}
 
 	return nil
