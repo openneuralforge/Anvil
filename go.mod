@@ -3,6 +3,8 @@ module blueprint
 go 1.23.3
 
 require (
+	github.com/go-gl/gl v0.0.0-20231021071112-07e5d0ea2e71 // indirect
+	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20240506104042-037f3cc74f2a // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
