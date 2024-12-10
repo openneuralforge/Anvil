@@ -5,6 +5,11 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"compress/gzip"
+	"io"
+	"net/http"
+	"path/filepath"
+	"log"
 )
 
 // Softmax activation function (applied across a slice)
@@ -148,5 +153,64 @@ func (bp *Blueprint) SaveToJSON(fileName string) error {
 	}
 
 	fmt.Printf("Blueprint saved successfully to '%s'\n", fileName)
+	return nil
+}
+
+// DownloadFile downloads a file from a URL and saves it locally.
+func (bp *Blueprint) DownloadFile(filepath string, url string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check if the status is 200 OK
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download file: %s, status code: %d", url, resp.StatusCode)
+	}
+
+	// Create the output file
+	out, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("failed to create file %s: %w", filepath, err)
+	}
+	defer out.Close()
+
+	// Write response content to file
+	_, err = io.Copy(out, resp.Body)
+	return err
+}
+
+// UnzipFile unzips a .gz file into the specified target directory.
+func (bp *Blueprint) UnzipFile(gzFile string, targetDir string) error {
+	// Open the .gz file
+	in, err := os.Open(gzFile)
+	if err != nil {
+		return fmt.Errorf("failed to open gzip file %s: %w", gzFile, err)
+	}
+	defer in.Close()
+
+	// Create a gzip reader
+	gz, err := gzip.NewReader(in)
+	if err != nil {
+		return fmt.Errorf("error creating gzip reader for %s: %v", gzFile, err)
+	}
+	defer gz.Close()
+
+	// Determine output filename by removing .gz extension and adding to targetDir
+	outFile := filepath.Join(targetDir, filepath.Base(gzFile[:len(gzFile)-3]))
+	out, err := os.Create(outFile)
+	if err != nil {
+		return fmt.Errorf("failed to create output file %s: %w", outFile, err)
+	}
+	defer out.Close()
+
+	// Copy the decompressed data to the output file
+	_, err = io.Copy(out, gz)
+	if err != nil {
+		return fmt.Errorf("error during unzipping %s: %v", gzFile, err)
+	}
+
+	log.Printf("Unzipped %s successfully to %s\n", gzFile, outFile)
 	return nil
 }

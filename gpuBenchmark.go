@@ -1,6 +1,6 @@
-// blueprint/gpuBenchmark.go
 package blueprint
 
+/*
 import (
 	"fmt"
 	"time"
@@ -212,3 +212,4 @@ func (bp *Blueprint) createSSBO(binding uint32, size int, data []float32) (uint3
 
 	return ssbo, nil
 }
+*/
