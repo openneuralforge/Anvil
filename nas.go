@@ -373,6 +373,7 @@ func getRandomXNeurons(neuronIDs []int, x int) []int {
 
 // ParallelSimpleNASWithRandomConnections attempts to improve the blueprint using multi-threading.
 // It automatically detects the number of CPU cores and runs multiple candidate tests per iteration.
+// Hill climbing is only done on the best selected model of each iteration.
 func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 	sessions []Session,
 	maxIterations int,
@@ -414,7 +415,7 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 	numWorkers := runtime.NumCPU()
 	fmt.Printf("Running with %d parallel workers.\n", numWorkers)
 
-	// Convert the best blueprint to a JSON string for distribution to workers
+	// Helper functions to serialize/deserialize the blueprint
 	serializeBlueprint := func(bp *Blueprint) (string, error) {
 		data, err := json.Marshal(bp)
 		if err != nil {
@@ -434,6 +435,13 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 		return &newBP, nil
 	}
 
+	type candidateResult struct {
+		ExactAccuracy       float64
+		GenerousAccuracy    float64
+		ForgivenessAccuracy float64
+		CandidateBlueprint  *Blueprint
+	}
+
 	for iteration := 1; iteration <= maxIterations; iteration++ {
 		fmt.Printf("=== Iteration %d ===\n", iteration)
 
@@ -444,7 +452,7 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 			continue
 		}
 
-		// We'll generate multiple candidates in parallel and pick the best
+		// Generate multiple candidates in parallel
 		var wg sync.WaitGroup
 		resultsChan := make(chan candidateResult, numWorkers)
 
@@ -470,15 +478,7 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 					return
 				}
 
-				// Perform hill-climbing weight updates
-				for w := 0; w < weightUpdateIterations; w++ {
-					improved := candidateBlueprint.HillClimbWeightUpdate(sessions, forgivenessThreshold)
-					if !improved {
-						continue
-					}
-				}
-
-				// Evaluate the candidate model after weight updates
+				// Evaluate the candidate model without hill climbing
 				exactAccuracy, generousAccuracy, forgivenessAccuracy, _, _, _ :=
 					candidateBlueprint.EvaluateModelPerformance(sessions, forgivenessThreshold)
 
@@ -495,7 +495,7 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 		wg.Wait()
 		close(resultsChan)
 
-		// Find the best candidate from this iteration
+		// Find the best candidate from this iteration based on the given criteria (before hill climbing)
 		improved := false
 		var bestIterationCandidate *Blueprint
 		var bestItExact, bestItGenerous, bestItForgiveness float64
@@ -506,9 +506,11 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 		bestItForgiveness = bestForgivenessAccuracy
 
 		for res := range resultsChan {
-			// Check if the candidate model improves on any of the metrics according to our criteria
+			// Check if the candidate model improves on any of the metrics
 			if res.ExactAccuracy > bestExactAccuracy ||
 				(res.ExactAccuracy == bestExactAccuracy && (res.GenerousAccuracy > bestGenerousAccuracy || res.ForgivenessAccuracy > bestForgivenessAccuracy)) {
+				// This candidate is at least as good or better than our current best.
+				// Check if it's better than any we've seen so far this iteration
 				if res.ExactAccuracy > bestItExact ||
 					(res.ExactAccuracy == bestItExact && (res.GenerousAccuracy > bestItGenerous || res.ForgivenessAccuracy > bestItForgiveness)) {
 					bestIterationCandidate = res.CandidateBlueprint
@@ -521,25 +523,46 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 		}
 
 		if improved && bestIterationCandidate != nil {
-			bestBlueprint = bestIterationCandidate
-			bestExactAccuracy = bestItExact
-			bestGenerousAccuracy = bestItGenerous
-			bestForgivenessAccuracy = bestItForgiveness
+			// Now, perform hill-climbing weight updates on the chosen candidate
+			for w := 0; w < weightUpdateIterations; w++ {
+				hcImproved := bestIterationCandidate.HillClimbWeightUpdate(sessions, forgivenessThreshold)
+				if !hcImproved {
+					// If no improvement, continue to try the remaining iterations
+					continue
+				}
+			}
 
-			fmt.Printf("Iteration %d: Improved model found! Exact=%.2f%%, Generous=%.2f%%, Forgiveness=%.2f%%\n",
-				iteration, bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy)
+			// Re-evaluate after hill climbing
+			newExact, newGenerous, newForgiveness, _, _, _ :=
+				bestIterationCandidate.EvaluateModelPerformance(sessions, forgivenessThreshold)
 
-			progress = append(progress, struct {
-				Iteration           int
-				ExactAccuracy       float64
-				GenerousAccuracy    float64
-				ForgivenessAccuracy float64
-			}{
-				Iteration:           iteration,
-				ExactAccuracy:       bestExactAccuracy,
-				GenerousAccuracy:    bestGenerousAccuracy,
-				ForgivenessAccuracy: bestForgivenessAccuracy,
-			})
+			// Check if after hill climbing it's still an improvement
+			if newExact > bestExactAccuracy ||
+				(newExact == bestExactAccuracy && (newGenerous > bestGenerousAccuracy || newForgiveness > bestForgivenessAccuracy)) {
+				bestBlueprint = bestIterationCandidate
+				bestExactAccuracy = newExact
+				bestGenerousAccuracy = newGenerous
+				bestForgivenessAccuracy = newForgiveness
+
+				fmt.Printf("Iteration %d: Improved model found after hill climbing! Exact=%.2f%%, Generous=%.2f%%, Forgiveness=%.2f%%\n",
+					iteration, bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy)
+
+				progress = append(progress, struct {
+					Iteration           int
+					ExactAccuracy       float64
+					GenerousAccuracy    float64
+					ForgivenessAccuracy float64
+				}{
+					Iteration:           iteration,
+					ExactAccuracy:       bestExactAccuracy,
+					GenerousAccuracy:    bestGenerousAccuracy,
+					ForgivenessAccuracy: bestForgivenessAccuracy,
+				})
+			} else {
+				// After hill climbing, the candidate no longer improves the best metrics.
+				// No update to the bestBlueprint.
+				fmt.Printf("Iteration %d: Candidate did not improve after hill climbing.\n", iteration)
+			}
 		} else {
 			fmt.Printf("Iteration %d: No improvement.\n", iteration)
 		}
