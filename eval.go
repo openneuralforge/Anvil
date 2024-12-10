@@ -2,7 +2,7 @@
 package blueprint
 
 import (
-	"fmt"
+	//"fmt"
 	"math"
 )
 
@@ -67,9 +67,9 @@ func (bp *Blueprint) EvaluateModelPerformance(sessions []Session, forgivenessThr
 	// Calculate average generous error
 	averageGenerousError := totalGenerousError / float64(len(sessions))
 
-	fmt.Printf("Model exact accuracy: %.2f%%, Exact Errors: %d\n", exactAccuracy, exactErrorCount)
-	fmt.Printf("Model generous accuracy: %.2f%%, Average Generous Error: %.2f\n", generousAccuracy, averageGenerousError)
-	fmt.Printf("Model forgiveness accuracy: %.2f%%, Forgiveness Errors: %d\n", forgivenessAccuracy, forgivenessErrorCount)
+	//fmt.Printf("Model exact accuracy: %.2f%%, Exact Errors: %d\n", exactAccuracy, exactErrorCount)
+	//fmt.Printf("Model generous accuracy: %.2f%%, Average Generous Error: %.2f\n", generousAccuracy, averageGenerousError)
+	//fmt.Printf("Model forgiveness accuracy: %.2f%%, Forgiveness Errors: %d\n", forgivenessAccuracy, forgivenessErrorCount)
 
 	return exactAccuracy, generousAccuracy, forgivenessAccuracy, exactErrorCount, averageGenerousError, forgivenessErrorCount
 }

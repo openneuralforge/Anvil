@@ -327,15 +327,6 @@ func (bp *Blueprint) InsertNeuronWithRandomConnectionsAndReconnect(neuronType st
 	return nil
 }
 
-// getAllNeuronIDs retrieves the IDs of all neurons in the blueprint.
-func (bp *Blueprint) getAllNeuronIDs() []int {
-	neuronIDs := []int{}
-	for id := range bp.Neurons {
-		neuronIDs = append(neuronIDs, id)
-	}
-	return neuronIDs
-}
-
 // getActiveNeuronIDs retrieves IDs of all neurons except inputs and outputs.
 func (bp *Blueprint) getActiveNeuronIDs() []int {
 	activeNeuronIDs := []int{}

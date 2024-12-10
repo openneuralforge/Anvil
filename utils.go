@@ -1,15 +1,15 @@
 package blueprint
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"math"
-	"os"
-	"compress/gzip"
 	"io"
-	"net/http"
-	"path/filepath"
 	"log"
+	"math"
+	"net/http"
+	"os"
+	"path/filepath"
 )
 
 // Softmax activation function (applied across a slice)
@@ -213,4 +213,27 @@ func (bp *Blueprint) UnzipFile(gzFile string, targetDir string) error {
 
 	log.Printf("Unzipped %s successfully to %s\n", gzFile, outFile)
 	return nil
+}
+
+// ToJSON serializes the Blueprint to a JSON string.
+func (bp *Blueprint) SerializeToJSON() (string, error) {
+	data, err := json.Marshal(bp)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// FromJSON deserializes the Blueprint from a JSON string.
+func (bp *Blueprint) DeserializesFromJSON(data string) error {
+	return json.Unmarshal([]byte(data), bp)
+}
+
+// getAllNeuronIDs retrieves the IDs of all neurons in the blueprint.
+func (bp *Blueprint) getAllNeuronIDs() []int {
+	neuronIDs := []int{}
+	for id := range bp.Neurons {
+		neuronIDs = append(neuronIDs, id)
+	}
+	return neuronIDs
 }
