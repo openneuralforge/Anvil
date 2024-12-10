@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -236,4 +237,31 @@ func (bp *Blueprint) getAllNeuronIDs() []int {
 		neuronIDs = append(neuronIDs, id)
 	}
 	return neuronIDs
+}
+
+// getRandomConnectionPair selects a random valid source and target neuron IDs for adding a connection.
+// Returns -1, -1 if no valid pair is found.
+func (bp *Blueprint) getRandomConnectionPair() (int, int) {
+	neuronIDs := bp.getAllNeuronIDs()
+	if len(neuronIDs) < 2 {
+		return -1, -1
+	}
+
+	// Shuffle neuron IDs to randomize selection
+	rand.Shuffle(len(neuronIDs), func(i, j int) { neuronIDs[i], neuronIDs[j] = neuronIDs[j], neuronIDs[i] })
+
+	for _, source := range neuronIDs {
+		for _, target := range neuronIDs {
+			if source == target {
+				continue
+			}
+			// Check if connection already exists
+			if bp.connectionExists(source, target) {
+				continue
+			}
+			// We have a candidate
+			return source, target
+		}
+	}
+	return -1, -1
 }
