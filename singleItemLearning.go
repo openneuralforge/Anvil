@@ -76,321 +76,12 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 				defer wgWorkers.Done()
 				for _, sess := range batch {
 					for attempt := 0; attempt < maxAttemptsPerSession; attempt++ {
-						// Randomly decide the modification type
-						modType := randomModificationType()
+						// Perform random modification and evaluate the improvement
+						attemptResult := bp.performRandomModification(sess, neuronTypes)
 
-						var attemptResult NeuronAdditionAttempt
-
-						switch modType {
-						case "insert_neuron":
-							// Randomly select a neuron type to attempt
-							neuronType := neuronTypes[rand.Intn(len(neuronTypes))]
-
-							// Serialize the current model
-							modelJSON, err := bp.SerializeToJSON()
-							if err != nil {
-								fmt.Printf("Worker %d: Error serializing model: %v\n", workerID, err)
-								continue
-							}
-
-							// Deserialize into a new Blueprint
-							newBP := &Blueprint{}
-							err = newBP.DeserializesFromJSON(modelJSON)
-							if err != nil {
-								fmt.Printf("Worker %d: Error deserializing model: %v\n", workerID, err)
-								continue
-							}
-
-							// Attempt to insert a neuron of the selected type
-							err = newBP.InsertNeuronWithRandomConnections(neuronType)
-							if err != nil {
-								fmt.Printf("Worker %d: Error inserting neuron of type '%s': %v\n", workerID, neuronType, err)
-								continue
-							}
-
-							// Evaluate the new model on the single session
-							tempSessions := []Session{sess}
-							newExact, newGenerous, newForgive, _, _, _ :=
-								newBP.EvaluateModelPerformance(tempSessions)
-
-							// Calculate improvement on this session
-							improvement := calculateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive)
-
-							// Serialize the new model
-							newModelJSON, err := newBP.SerializeToJSON()
-							if err != nil {
-								fmt.Printf("Worker %d: Error serializing new model: %v\n", workerID, err)
-								continue
-							}
-
-							// If improvement is positive, send the attempt to the channel
-							if improvement > 0 {
-								attemptResult = NeuronAdditionAttempt{
-									ModificationType: "insert_neuron",
-									NeuronType:       neuronType,
-									ModelJSON:        newModelJSON,
-									ExactAcc:         newExact,
-									GenerousAcc:      newGenerous,
-									ForgiveAcc:       newForgive,
-									Improvement:      improvement,
-								}
-								attemptCh <- attemptResult
-							}
-
-						case "add_connection":
-							// Attempt to add a connection with random type
-							sourceID, targetID := bp.getRandomConnectionPair()
-							if sourceID == -1 || targetID == -1 {
-								// No valid connection pair found
-								continue
-							}
-
-							// Random weight between -1 and 1
-							weight := rand.Float64()*2 - 1
-
-							// Serialize the current model
-							modelJSON, err := bp.SerializeToJSON()
-							if err != nil {
-								fmt.Printf("Worker %d: Error serializing model: %v\n", workerID, err)
-								continue
-							}
-
-							// Deserialize into a new Blueprint
-							newBP := &Blueprint{}
-							err = newBP.DeserializesFromJSON(modelJSON)
-							if err != nil {
-								fmt.Printf("Worker %d: Error deserializing model: %v\n", workerID, err)
-								continue
-							}
-
-							// Attempt to add the connection
-							err = newBP.addConnection(sourceID, targetID, weight)
-							if err != nil {
-								fmt.Printf("Worker %d: Error adding connection (%d -> %d): %v\n", workerID, sourceID, targetID, err)
-								continue
-							}
-
-							// Evaluate the new model on the single session
-							tempSessions := []Session{sess}
-							newExact, newGenerous, newForgive, _, _, _ :=
-								newBP.EvaluateModelPerformance(tempSessions)
-
-							// Calculate improvement on this session
-							improvement := calculateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive)
-
-							// Serialize the new model
-							newModelJSON, err := newBP.SerializeToJSON()
-							if err != nil {
-								fmt.Printf("Worker %d: Error serializing new model: %v\n", workerID, err)
-								continue
-							}
-
-							// If improvement is positive, send the attempt to the channel
-							if improvement > 0 {
-								attemptResult = NeuronAdditionAttempt{
-									ModificationType: "add_connection",
-									SourceID:         sourceID,
-									TargetID:         targetID,
-									Weight:           weight,
-									ModelJSON:        newModelJSON,
-									ExactAcc:         newExact,
-									GenerousAcc:      newGenerous,
-									ForgiveAcc:       newForgive,
-									Improvement:      improvement,
-								}
-								attemptCh <- attemptResult
-							}
-
-						case "modify_activation":
-							// Attempt to modify the activation function of a random neuron (non-input/output)
-							neuronID := bp.getRandomHiddenNeuron()
-							if neuronID == -1 {
-								continue
-							}
-
-							// Randomly select a new activation function
-							newActivation := randomActivationFunction()
-
-							// Serialize the current model
-							modelJSON, err := bp.SerializeToJSON()
-							if err != nil {
-								fmt.Printf("Worker %d: Error serializing model: %v\n", workerID, err)
-								continue
-							}
-
-							// Deserialize into a new Blueprint
-							newBP := &Blueprint{}
-							err = newBP.DeserializesFromJSON(modelJSON)
-							if err != nil {
-								fmt.Printf("Worker %d: Error deserializing model: %v\n", workerID, err)
-								continue
-							}
-
-							// Modify the activation function
-							err = newBP.modifyActivationFunction(neuronID, newActivation)
-							if err != nil {
-								fmt.Printf("Worker %d: Error modifying activation function of neuron %d: %v\n", workerID, neuronID, err)
-								continue
-							}
-
-							// Evaluate the new model on the single session
-							tempSessions := []Session{sess}
-							newExact, newGenerous, newForgive, _, _, _ :=
-								newBP.EvaluateModelPerformance(tempSessions)
-
-							// Calculate improvement on this session
-							improvement := calculateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive)
-
-							// Serialize the new model
-							newModelJSON, err := newBP.SerializeToJSON()
-							if err != nil {
-								fmt.Printf("Worker %d: Error serializing new model: %v\n", workerID, err)
-								continue
-							}
-
-							// If improvement is positive, send the attempt to the channel
-							if improvement > 0 {
-								attemptResult = NeuronAdditionAttempt{
-									ModificationType: "modify_activation",
-									NeuronType:       "", // Not applicable
-									SourceID:         neuronID,
-									TargetID:         0,   // Not applicable
-									Weight:           0.0, // Not applicable
-									Activation:       newActivation,
-									ModelJSON:        newModelJSON,
-									ExactAcc:         newExact,
-									GenerousAcc:      newGenerous,
-									ForgiveAcc:       newForgive,
-									Improvement:      improvement,
-								}
-								attemptCh <- attemptResult
-							}
-
-						case "remove_connection":
-							// Attempt to remove a random existing connection
-							sourceID, targetID := bp.getRandomExistingConnectionPair()
-							if sourceID == -1 || targetID == -1 {
-								// No valid connection to remove
-								continue
-							}
-
-							// Serialize the current model
-							modelJSON, err := bp.SerializeToJSON()
-							if err != nil {
-								fmt.Printf("Worker %d: Error serializing model: %v\n", workerID, err)
-								continue
-							}
-
-							// Deserialize into a new Blueprint
-							newBP := &Blueprint{}
-							err = newBP.DeserializesFromJSON(modelJSON)
-							if err != nil {
-								fmt.Printf("Worker %d: Error deserializing model: %v\n", workerID, err)
-								continue
-							}
-
-							// Attempt to remove the connection
-							newBP.removeConnection(sourceID, targetID)
-
-							// Evaluate the new model on the single session
-							tempSessions := []Session{sess}
-							newExact, newGenerous, newForgive, _, _, _ :=
-								newBP.EvaluateModelPerformance(tempSessions)
-
-							// Calculate improvement on this session
-							improvement := calculateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive)
-
-							// Serialize the new model
-							newModelJSON, err := newBP.SerializeToJSON()
-							if err != nil {
-								fmt.Printf("Worker %d: Error serializing new model: %v\n", workerID, err)
-								continue
-							}
-
-							// If improvement is positive, send the attempt to the channel
-							if improvement > 0 {
-								attemptResult = NeuronAdditionAttempt{
-									ModificationType: "remove_connection",
-									SourceID:         sourceID,
-									TargetID:         targetID,
-									Weight:           0.0, // Not applicable
-									ModelJSON:        newModelJSON,
-									ExactAcc:         newExact,
-									GenerousAcc:      newGenerous,
-									ForgiveAcc:       newForgive,
-									Improvement:      improvement,
-								}
-								attemptCh <- attemptResult
-							}
-
-						case "adjust_weight":
-							// Attempt to adjust the weight of a random existing connection
-							sourceID, targetID := bp.getRandomExistingConnectionPair()
-							if sourceID == -1 || targetID == -1 {
-								// No valid connection to adjust
-								continue
-							}
-
-							// Randomly adjust the weight by a small delta
-							delta := rand.Float64()*0.2 - 0.1 // Adjust by -0.1 to +0.1
-							newWeight := bp.getConnectionWeight(sourceID, targetID) + delta
-
-							// Serialize the current model
-							modelJSON, err := bp.SerializeToJSON()
-							if err != nil {
-								fmt.Printf("Worker %d: Error serializing model: %v\n", workerID, err)
-								continue
-							}
-
-							// Deserialize into a new Blueprint
-							newBP := &Blueprint{}
-							err = newBP.DeserializesFromJSON(modelJSON)
-							if err != nil {
-								fmt.Printf("Worker %d: Error deserializing model: %v\n", workerID, err)
-								continue
-							}
-
-							// Attempt to adjust the weight
-							err = newBP.addConnection(sourceID, targetID, newWeight) // Reuse addConnection to update weight
-							if err != nil {
-								fmt.Printf("Worker %d: Error adjusting weight for connection (%d -> %d): %v\n", workerID, sourceID, targetID, err)
-								continue
-							}
-
-							// Evaluate the new model on the single session
-							tempSessions := []Session{sess}
-							newExact, newGenerous, newForgive, _, _, _ :=
-								newBP.EvaluateModelPerformance(tempSessions)
-
-							// Calculate improvement on this session
-							improvement := calculateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive)
-
-							// Serialize the new model
-							newModelJSON, err := newBP.SerializeToJSON()
-							if err != nil {
-								fmt.Printf("Worker %d: Error serializing new model: %v\n", workerID, err)
-								continue
-							}
-
-							// If improvement is positive, send the attempt to the channel
-							if improvement > 0 {
-								attemptResult = NeuronAdditionAttempt{
-									ModificationType: "adjust_weight",
-									SourceID:         sourceID,
-									TargetID:         targetID,
-									Weight:           newWeight,
-									ModelJSON:        newModelJSON,
-									ExactAcc:         newExact,
-									GenerousAcc:      newGenerous,
-									ForgiveAcc:       newForgive,
-									Improvement:      improvement,
-								}
-								attemptCh <- attemptResult
-							}
-
-						default:
-							// Unknown modification type
-							continue
+						// Send attempt to channel if it has improvement
+						if attemptResult != nil {
+							attemptCh <- *attemptResult
 						}
 					}
 				}
@@ -403,7 +94,7 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 			close(attemptCh)
 		}()
 
-		// Collect all beneficial attempts for this batch
+		// Select the best attempt for the batch
 		var bestBatchAttempt *NeuronAdditionAttempt
 		var bestBatchImprovement float64
 
@@ -414,8 +105,11 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 			}
 		}
 
-		// After the batch, check if there was an improvement
-		if bestBatchAttempt != nil && bestBatchImprovement > 0 {
+		// Update the model if the best attempt improves all or preserves existing accuracies
+		if bestBatchAttempt != nil && (bestBatchAttempt.ExactAcc >= initialExact &&
+			bestBatchAttempt.GenerousAcc >= initialGenerous &&
+			bestBatchAttempt.ForgiveAcc >= initialForgive) {
+
 			// Deserialize the best batch model
 			err := bp.DeserializesFromJSON(bestBatchAttempt.ModelJSON)
 			if err != nil {
@@ -427,30 +121,12 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 			newExact, newGenerous, newForgive, _, _, _ :=
 				bp.EvaluateModelPerformance(sessions)
 
-			// Calculate overall improvement
-			overallImprovement := 0.0
-			if newExact > initialExact {
-				overallImprovement += newExact - initialExact
-			}
-			if newGenerous > initialGenerous {
-				overallImprovement += newGenerous - initialGenerous
-			}
-			if newForgive > initialForgive {
-				overallImprovement += newForgive - initialForgive
-			}
-
-			// Update the initial accuracies for the next batch
+			// Update initial metrics for the next batch
 			initialExact, initialGenerous, initialForgive = newExact, newGenerous, newForgive
 
-			// If overall improvement is positive, update the model
-			if overallImprovement > 0 {
-				fmt.Printf("\nBatch %d: Model improved by %.6f! Updating the main model.\n", batchIdx, overallImprovement)
-				fmt.Printf("New Accuracies - Exact: %.6f%%, Generous: %.6f%%, Forgiveness: %.6f%%\n",
-					newExact, newGenerous, newForgive)
-			} else {
-				fmt.Printf("\nBatch %d: No overall improvement after modifications.\n", batchIdx)
-				// Optionally, revert changes or take other actions
-			}
+			fmt.Printf("\nBatch %d: Model improved! Updating the main model.\n", batchIdx)
+			fmt.Printf("New Accuracies - Exact: %.6f%%, Generous: %.6f%%, Forgiveness: %.6f%%\n",
+				newExact, newGenerous, newForgive)
 		} else {
 			fmt.Printf("\nBatch %d: No beneficial modifications were found.\n", batchIdx)
 		}
@@ -553,4 +229,76 @@ func (bp *Blueprint) getConnectionWeight(sourceID, targetID int) float64 {
 		}
 	}
 	return 0.0
+}
+
+// performRandomModification executes a random modification and evaluates its impact.
+func (bp *Blueprint) performRandomModification(sess Session, neuronTypes []string) *NeuronAdditionAttempt {
+	// Randomly decide the modification type
+	modType := randomModificationType()
+
+	// Serialize the current model
+	modelJSON, err := bp.SerializeToJSON()
+	if err != nil {
+		fmt.Printf("Error serializing model: %v\n", err)
+		return nil
+	}
+
+	// Deserialize into a new Blueprint
+	newBP := &Blueprint{}
+	err = newBP.DeserializesFromJSON(modelJSON)
+	if err != nil {
+		fmt.Printf("Error deserializing model: %v\n", err)
+		return nil
+	}
+
+	// Perform the modification
+	switch modType {
+	case "insert_neuron":
+		neuronType := neuronTypes[rand.Intn(len(neuronTypes))]
+		err = newBP.InsertNeuronWithRandomConnections(neuronType)
+	case "add_connection":
+		sourceID, targetID := bp.getRandomConnectionPair()
+		if sourceID != -1 && targetID != -1 {
+			err = newBP.addConnection(sourceID, targetID, rand.Float64()*2-1)
+		}
+	case "modify_activation":
+		neuronID := bp.getRandomHiddenNeuron()
+		if neuronID != -1 {
+			err = newBP.modifyActivationFunction(neuronID, randomActivationFunction())
+		}
+	case "remove_connection":
+		sourceID, targetID := bp.getRandomExistingConnectionPair()
+		if sourceID != -1 && targetID != -1 {
+			newBP.removeConnection(sourceID, targetID)
+		}
+	case "adjust_weight":
+		sourceID, targetID := bp.getRandomExistingConnectionPair()
+		if sourceID != -1 && targetID != -1 {
+			err = newBP.addConnection(sourceID, targetID, bp.getConnectionWeight(sourceID, targetID)+(rand.Float64()*0.2-0.1))
+		}
+	}
+
+	if err != nil {
+		return nil
+	}
+
+	// Evaluate the new model
+	tempSessions := []Session{sess}
+	newExact, newGenerous, newForgive, _, _, _ :=
+		newBP.EvaluateModelPerformance(tempSessions)
+
+	improvement := calculateImprovement(newExact, newGenerous, newForgive, 0, 0, 0) // Improvement per session
+
+	if improvement > 0 {
+		return &NeuronAdditionAttempt{
+			ModificationType: modType,
+			ModelJSON:        modelJSON,
+			ExactAcc:         newExact,
+			GenerousAcc:      newGenerous,
+			ForgiveAcc:       newForgive,
+			Improvement:      improvement,
+		}
+	}
+
+	return nil
 }

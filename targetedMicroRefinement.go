@@ -8,15 +8,7 @@ import (
 )
 
 // TargetedMicroRefinement attempts to improve the model by focusing on "near-miss" samples
-// and making small weight tweaks. It considers improvement if exact, generous, or forgiveness accuracy increases.
-//
-// Parameters:
-// - sessions: The training/testing sessions.
-// - forgivenessThreshold: Threshold for forgiveness accuracy computation.
-// - maxIterations: Maximum refinement iterations.
-// - sampleSubsetSize: How many near-miss samples to tweak per iteration.
-// - connectionTrialsPerSample: How many weight perturbations to try per sample.
-// - improvementThreshold: If exact accuracy surpasses this value, stop early.
+// and making small weight tweaks. It updates only if any accuracy improves without others decreasing.
 func (bp *Blueprint) TargetedMicroRefinement(
 	sessions []Session,
 	maxIterations int,
@@ -60,36 +52,38 @@ func (bp *Blueprint) TargetedMicroRefinement(
 			_ = bp.refineSampleWeights(s, criticalConnections, connectionTrialsPerSample)
 		}
 
-		newExactAcc, newGenerousAcc, newForgivenessAcc, _, _, _ :=
+		newExactAcc, newGenerousAcc, newForgiveAcc, _, _, _ :=
 			bp.EvaluateModelPerformance(sessions)
 
 		fmt.Printf("After iteration %d:\n", iter)
 		fmt.Printf("Exact=%.6f%% (was %.6f%%), Generous=%.6f%% (was %.6f%%), Forgiveness=%.6f%% (was %.6f%%)\n",
-			newExactAcc, lastExactAcc, newGenerousAcc, lastGenerousAcc, newForgivenessAcc, lastForgiveAcc)
+			newExactAcc, lastExactAcc, newGenerousAcc, lastGenerousAcc, newForgiveAcc, lastForgiveAcc)
 
-		// Check if any metric improved
+		// Check for improvement without regression
 		improvement := false
-		if newExactAcc > lastExactAcc {
-			fmt.Println("Exact accuracy improved!")
-			improvement = true
-		}
-		if newGenerousAcc > lastGenerousAcc {
-			fmt.Println("Generous accuracy improved!")
-			improvement = true
-		}
-		if newForgivenessAcc > lastForgiveAcc {
-			fmt.Println("Forgiveness accuracy improved!")
-			improvement = true
+		if newExactAcc >= lastExactAcc && newGenerousAcc >= lastGenerousAcc && newForgiveAcc >= lastForgiveAcc {
+			if newExactAcc > lastExactAcc {
+				fmt.Println("Exact accuracy improved!")
+				improvement = true
+			}
+			if newGenerousAcc > lastGenerousAcc {
+				fmt.Println("Generous accuracy improved!")
+				improvement = true
+			}
+			if newForgiveAcc > lastForgiveAcc {
+				fmt.Println("Forgiveness accuracy improved!")
+				improvement = true
+			}
 		}
 
 		if improvement {
 			lastExactAcc = newExactAcc
 			lastGenerousAcc = newGenerousAcc
-			lastForgiveAcc = newForgivenessAcc
+			lastForgiveAcc = newForgiveAcc
 			noImprovementCount = 0
 		} else {
 			noImprovementCount++
-			fmt.Printf("No improvement in any metric this iteration. Count=%d\n", noImprovementCount)
+			fmt.Printf("No improvement in metrics this iteration. Count=%d\n", noImprovementCount)
 		}
 
 		if newExactAcc >= improvementThreshold {
