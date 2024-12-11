@@ -377,7 +377,6 @@ func getRandomXNeurons(neuronIDs []int, x int) []int {
 func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 	sessions []Session,
 	maxIterations int,
-	forgivenessThreshold float64,
 	neuronTypes []string,
 	weightUpdateIterations int,
 ) {
