@@ -9,7 +9,7 @@ import (
 )
 
 // EvolutionaryTrain performs evolutionary training using neuroevolution.
-func (bp *Blueprint) EvolutionaryTrain(sessions []Session, populationSize int, generations int, forgivenessThreshold float64) {
+func (bp *Blueprint) EvolutionaryTrain(sessions []Session, populationSize int, generations int) {
 	rand.Seed(time.Now().UnixNano())
 
 	// Initialize the population
@@ -28,7 +28,7 @@ func (bp *Blueprint) EvolutionaryTrain(sessions []Session, populationSize int, g
 		// Evaluate each individual
 		scores := make([]float64, populationSize)
 		for i, individual := range population {
-			exactAccuracy, generousAccuracy, forgivenessAccuracy, _, _, _ := individual.EvaluateModelPerformance(sessions, forgivenessThreshold)
+			exactAccuracy, generousAccuracy, forgivenessAccuracy, _, _, _ := individual.EvaluateModelPerformance(sessions)
 			// Use a weighted sum of the accuracies as the fitness score
 			scores[i] = (exactAccuracy + generousAccuracy + forgivenessAccuracy) / 3.0
 		}
@@ -54,7 +54,7 @@ func (bp *Blueprint) EvolutionaryTrain(sessions []Session, populationSize int, g
 	bestIndividual := population[0]
 	bestScore := 0.0
 	for _, individual := range population {
-		exactAccuracy, generousAccuracy, forgivenessAccuracy, _, _, _ := individual.EvaluateModelPerformance(sessions, forgivenessThreshold)
+		exactAccuracy, generousAccuracy, forgivenessAccuracy, _, _, _ := individual.EvaluateModelPerformance(sessions)
 		score := (exactAccuracy + generousAccuracy + forgivenessAccuracy) / 3.0
 		if score > bestScore {
 			bestScore = score

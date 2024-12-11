@@ -10,7 +10,7 @@ import (
 
 // HillClimbWeightUpdate performs random perturbations on the network's weights.
 // It keeps the changes if the performance improves.
-func (bp *Blueprint) HillClimbWeightUpdate(sessions []Session, forgivenessThreshold float64) bool {
+func (bp *Blueprint) HillClimbWeightUpdate(sessions []Session) bool {
 	// Clone the current blueprint to test changes
 	candidateBP := bp.Clone()
 	if candidateBP == nil {
@@ -49,10 +49,10 @@ func (bp *Blueprint) HillClimbWeightUpdate(sessions []Session, forgivenessThresh
 	targetNeuron.Connections[connIndex][1] += perturbation
 
 	// Evaluate the candidate blueprint's performance
-	exactAcc, generousAcc, forgivenessAcc, _, _, _ := candidateBP.EvaluateModelPerformance(sessions, forgivenessThreshold)
+	exactAcc, generousAcc, forgivenessAcc, _, _, _ := candidateBP.EvaluateModelPerformance(sessions)
 
 	// Evaluate the current blueprint's performance
-	currentExactAcc, currentGenerousAcc, currentForgivenessAcc, _, _, _ := bp.EvaluateModelPerformance(sessions, forgivenessThreshold)
+	currentExactAcc, currentGenerousAcc, currentForgivenessAcc, _, _, _ := bp.EvaluateModelPerformance(sessions)
 
 	// Determine if the candidate is better
 	improved := false

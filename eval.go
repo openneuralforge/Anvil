@@ -2,7 +2,6 @@
 package blueprint
 
 import (
-	//"fmt"
 	"math"
 )
 
@@ -14,14 +13,14 @@ type Session struct {
 }
 
 // EvaluateModelPerformance evaluates the model's performance over a list of sessions,
-// returning exact accuracy, generous accuracy, forgiveness accuracy, and their associated errors.
-func (bp *Blueprint) EvaluateModelPerformance(sessions []Session, forgivenessThreshold float64) (float64, float64, float64, int, float64, int) {
+// returning exact accuracy, generous accuracy, decile consistency accuracy, and their associated errors.
+func (bp *Blueprint) EvaluateModelPerformance(sessions []Session) (float64, float64, float64, int, float64, int) {
 	exactCorrectPredictions := 0
 	totalGenerousScore := 0.0
-	forgivenessCorrectPredictions := 0
+	decileConsistentCount := 0
 	exactErrorCount := 0
 	totalGenerousError := 0.0
-	forgivenessErrorCount := 0
+	decileInconsistentCount := 0
 
 	for _, session := range sessions {
 		bp.RunNetwork(session.InputVariables, session.Timesteps)
@@ -42,19 +41,19 @@ func (bp *Blueprint) EvaluateModelPerformance(sessions []Session, forgivenessThr
 		generousError := 100.0 - similarityScore
 		totalGenerousError += generousError
 
-		if isWithinForgivenessThreshold(predictedOutput, session.ExpectedOutput, forgivenessThreshold) {
-			forgivenessCorrectPredictions++
+		if isDecileConsistent(predictedOutput, session.ExpectedOutput) {
+			decileConsistentCount++
 		} else {
-			forgivenessErrorCount++
+			decileInconsistentCount++
 		}
 	}
 
 	exactAccuracy := float64(exactCorrectPredictions) / float64(len(sessions)) * 100.0
 	generousAccuracy := totalGenerousScore / float64(len(sessions))
-	forgivenessAccuracy := float64(forgivenessCorrectPredictions) / float64(len(sessions)) * 100.0
+	decileConsistencyAccuracy := float64(decileConsistentCount) / float64(len(sessions)) * 100.0
 	averageGenerousError := totalGenerousError / float64(len(sessions))
 
-	return exactAccuracy, generousAccuracy, forgivenessAccuracy, exactErrorCount, averageGenerousError, forgivenessErrorCount
+	return exactAccuracy, generousAccuracy, decileConsistencyAccuracy, exactErrorCount, averageGenerousError, decileInconsistentCount
 }
 
 // Helper functions
@@ -107,20 +106,27 @@ func calculateSimilarityScore(predicted, expected map[int]float64) float64 {
 	return similarity
 }
 
-// isWithinForgivenessThreshold checks if the predicted output is within the forgiveness threshold
-// of the expected output for each output neuron.
-func isWithinForgivenessThreshold(predicted, expected map[int]float64, threshold float64) bool {
+// isDecileConsistent checks if the predicted output falls consistently within the same decile across all expected values.
+func isDecileConsistent(predicted, expected map[int]float64) bool {
+	const decileStep = 0.1 // Deciles: 10%, 20%, ..., 90%
+
+	var referenceDecile int
 	for id, expectedValue := range expected {
 		predictedValue, exists := predicted[id]
 		if !exists {
 			return false
 		}
 
-		// Check if the predicted value is within the forgiveness threshold
-		lowerBound := expectedValue * (1.0 - threshold)
-		upperBound := expectedValue * (1.0 + threshold)
+		// Determine the decile for the current predicted value
+		difference := math.Abs(predictedValue - expectedValue)
+		decile := int(difference / decileStep)
+		if decile > 9 {
+			decile = 9 // Cap at the 90% decile
+		}
 
-		if predictedValue < lowerBound || predictedValue > upperBound {
+		if referenceDecile == 0 {
+			referenceDecile = decile
+		} else if referenceDecile != decile {
 			return false
 		}
 	}

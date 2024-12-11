@@ -28,7 +28,6 @@ type NeuronAdditionAttempt struct {
 // and updates the main model if overall performance improves after each batch.
 func (bp *Blueprint) LearnOneDataItemAtATime(
 	sessions []Session,
-	forgivenessThreshold float64,
 	maxAttemptsPerSession int,
 	neuronTypes []string,
 	batchSize int, // Number of sessions to process at a time
@@ -43,7 +42,7 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 
 	// Evaluate initial overall performance
 	initialExact, initialGenerous, initialForgive, _, _, _ :=
-		bp.EvaluateModelPerformance(sessions, forgivenessThreshold)
+		bp.EvaluateModelPerformance(sessions)
 
 	// Determine the number of workers based on available CPU cores
 	numWorkers := runtime.NumCPU()
@@ -112,7 +111,7 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 							// Evaluate the new model on the single session
 							tempSessions := []Session{sess}
 							newExact, newGenerous, newForgive, _, _, _ :=
-								newBP.EvaluateModelPerformance(tempSessions, forgivenessThreshold)
+								newBP.EvaluateModelPerformance(tempSessions)
 
 							// Calculate improvement on this session
 							improvement := calculateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive)
@@ -174,7 +173,7 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 							// Evaluate the new model on the single session
 							tempSessions := []Session{sess}
 							newExact, newGenerous, newForgive, _, _, _ :=
-								newBP.EvaluateModelPerformance(tempSessions, forgivenessThreshold)
+								newBP.EvaluateModelPerformance(tempSessions)
 
 							// Calculate improvement on this session
 							improvement := calculateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive)
@@ -237,7 +236,7 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 							// Evaluate the new model on the single session
 							tempSessions := []Session{sess}
 							newExact, newGenerous, newForgive, _, _, _ :=
-								newBP.EvaluateModelPerformance(tempSessions, forgivenessThreshold)
+								newBP.EvaluateModelPerformance(tempSessions)
 
 							// Calculate improvement on this session
 							improvement := calculateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive)
@@ -296,7 +295,7 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 							// Evaluate the new model on the single session
 							tempSessions := []Session{sess}
 							newExact, newGenerous, newForgive, _, _, _ :=
-								newBP.EvaluateModelPerformance(tempSessions, forgivenessThreshold)
+								newBP.EvaluateModelPerformance(tempSessions)
 
 							// Calculate improvement on this session
 							improvement := calculateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive)
@@ -361,7 +360,7 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 							// Evaluate the new model on the single session
 							tempSessions := []Session{sess}
 							newExact, newGenerous, newForgive, _, _, _ :=
-								newBP.EvaluateModelPerformance(tempSessions, forgivenessThreshold)
+								newBP.EvaluateModelPerformance(tempSessions)
 
 							// Calculate improvement on this session
 							improvement := calculateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive)
@@ -426,7 +425,7 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 
 			// Re-evaluate the overall model
 			newExact, newGenerous, newForgive, _, _, _ :=
-				bp.EvaluateModelPerformance(sessions, forgivenessThreshold)
+				bp.EvaluateModelPerformance(sessions)
 
 			// Calculate overall improvement
 			overallImprovement := 0.0

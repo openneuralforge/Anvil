@@ -19,7 +19,6 @@ import (
 // - improvementThreshold: If exact accuracy surpasses this value, stop early.
 func (bp *Blueprint) TargetedMicroRefinement(
 	sessions []Session,
-	forgivenessThreshold float64,
 	maxIterations int,
 	sampleSubsetSize int,
 	connectionTrialsPerSample int,
@@ -27,7 +26,7 @@ func (bp *Blueprint) TargetedMicroRefinement(
 ) {
 	rand.Seed(time.Now().UnixNano())
 
-	exactAcc, generousAcc, forgiveAcc, _, _, _ := bp.EvaluateModelPerformance(sessions, forgivenessThreshold)
+	exactAcc, generousAcc, forgiveAcc, _, _, _ := bp.EvaluateModelPerformance(sessions)
 	fmt.Printf("Starting TargetedMicroRefinement: Exact=%.6f%%, Generous=%.6f%%, Forgiveness=%.6f%%\n",
 		exactAcc, generousAcc, forgiveAcc)
 
@@ -37,10 +36,10 @@ func (bp *Blueprint) TargetedMicroRefinement(
 	}
 
 	// Find near-miss samples at 80% generous cutoff
-	nearMissSamples := bp.findNearMissSamples(sessions, forgivenessThreshold, 0.8)
+	nearMissSamples := bp.findNearMissSamples(sessions, 0.8)
 	if len(nearMissSamples) == 0 {
 		fmt.Println("No near-miss samples found at 80% generous cutoff. Trying 50% cutoff...")
-		nearMissSamples = bp.findNearMissSamples(sessions, forgivenessThreshold, 0.5)
+		nearMissSamples = bp.findNearMissSamples(sessions, 0.5)
 		if len(nearMissSamples) == 0 {
 			fmt.Println("No near-miss samples found even at 50% cutoff. Nothing to refine.")
 			return
@@ -58,11 +57,11 @@ func (bp *Blueprint) TargetedMicroRefinement(
 		subset := sampleSubset(nearMissSamples, sampleSubsetSize)
 		for _, s := range subset {
 			criticalConnections := bp.identifyCriticalConnections()
-			_ = bp.refineSampleWeights(s, criticalConnections, connectionTrialsPerSample, forgivenessThreshold)
+			_ = bp.refineSampleWeights(s, criticalConnections, connectionTrialsPerSample)
 		}
 
 		newExactAcc, newGenerousAcc, newForgivenessAcc, _, _, _ :=
-			bp.EvaluateModelPerformance(sessions, forgivenessThreshold)
+			bp.EvaluateModelPerformance(sessions)
 
 		fmt.Printf("After iteration %d:\n", iter)
 		fmt.Printf("Exact=%.6f%% (was %.6f%%), Generous=%.6f%% (was %.6f%%), Forgiveness=%.6f%% (was %.6f%%)\n",
@@ -106,7 +105,7 @@ func (bp *Blueprint) TargetedMicroRefinement(
 }
 
 // findNearMissSamples identifies sessions where the network is close but not exact based on generousCutoff.
-func (bp *Blueprint) findNearMissSamples(sessions []Session, forgivenessThreshold float64, generousCutoff float64) []Session {
+func (bp *Blueprint) findNearMissSamples(sessions []Session, generousCutoff float64) []Session {
 	var nearMiss []Session
 	countChecked := 0
 	countQualified := 0
@@ -152,7 +151,6 @@ func (bp *Blueprint) refineSampleWeights(
 	sample Session,
 	criticalNeurons []int,
 	trials int,
-	forgivenessThreshold float64,
 ) bool {
 	initialError := bp.sampleError(sample)
 	improved := false

@@ -24,14 +24,13 @@ type ConnectionAttempt struct {
 // connections that improve any of the accuracy metrics (exact, generous, forgiveness).
 func (bp *Blueprint) TryAddConnections(
 	sessions []Session,
-	forgivenessThreshold float64,
 	maxAttempts int,
 ) {
 	fmt.Println("Starting TryAddConnections phase...")
 
 	// Evaluate initial performance
 	initialExact, initialGenerous, initialForgive, _, _, _ :=
-		bp.EvaluateModelPerformance(sessions, forgivenessThreshold)
+		bp.EvaluateModelPerformance(sessions)
 
 	var bestAttempt *ConnectionAttempt
 	var bestImprovement float64
@@ -118,7 +117,7 @@ func (bp *Blueprint) TryAddConnections(
 				}
 
 				// Evaluate the new model
-				newExact, newGenerous, newForgive, _, _, _ := newBP.EvaluateModelPerformance(sessions, forgivenessThreshold)
+				newExact, newGenerous, newForgive, _, _, _ := newBP.EvaluateModelPerformance(sessions)
 
 				// Calculate improvement
 				improvement := 0.0

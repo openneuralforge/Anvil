@@ -2,14 +2,14 @@
 package blueprint
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"strings"
-	"time"
-	"bytes"
 	"runtime"
+	"strings"
 	"sync"
+	"time"
 )
 
 // This struct stores the result of evaluating a candidate blueprint.
@@ -22,13 +22,13 @@ type candidateResult struct {
 
 // SimpleNAS performs a basic neural architecture search by incrementally adding one neuron at a time
 // and keeping the change if it improves the model's evaluation on any of the three evaluation metrics.
-func (bp *Blueprint) SimpleNAS(sessions []Session, maxIterations int, forgivenessThreshold float64) {
+func (bp *Blueprint) SimpleNAS(sessions []Session, maxIterations int) {
 	// Seed the random number generator
 	rand.Seed(time.Now().UnixNano())
 
 	// Keep track of the best model and its performance
 	bestBlueprint := bp.Clone() // Assume we have a Clone method
-	bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy, _, _, _ := bestBlueprint.EvaluateModelPerformance(sessions, forgivenessThreshold)
+	bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy, _, _, _ := bestBlueprint.EvaluateModelPerformance(sessions)
 
 	fmt.Printf("Initial model performance: Exact=%.2f%%, Generous=%.2f%%, Forgiveness=%.2f%%\n",
 		bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy)
@@ -49,7 +49,7 @@ func (bp *Blueprint) SimpleNAS(sessions []Session, maxIterations int, forgivenes
 		}
 
 		// Evaluate the candidate model
-		exactAccuracy, generousAccuracy, forgivenessAccuracy, _, _, _ := candidateBlueprint.EvaluateModelPerformance(sessions, forgivenessThreshold)
+		exactAccuracy, generousAccuracy, forgivenessAccuracy, _, _, _ := candidateBlueprint.EvaluateModelPerformance(sessions)
 
 		// Check if the candidate model improves on any of the three metrics
 		if exactAccuracy > bestExactAccuracy || generousAccuracy > bestGenerousAccuracy || forgivenessAccuracy > bestForgivenessAccuracy {
@@ -132,7 +132,7 @@ func (bp *Blueprint) SimpleNASWithoutCrossover(
 	}
 
 	// Evaluate the initial model
-	initialExact, initialGenerous, initialForgiveness, _, _, _ := bp.EvaluateModelPerformance(sessions, forgivenessThreshold)
+	initialExact, initialGenerous, initialForgiveness, _, _, _ := bp.EvaluateModelPerformance(sessions)
 	fmt.Printf("Initial model performance: Exact=%.2f%%, Generous=%.2f%%, Forgiveness=%.2f%%\n",
 		initialExact, initialGenerous, initialForgiveness)
 
@@ -160,7 +160,7 @@ func (bp *Blueprint) SimpleNASWithoutCrossover(
 		}
 
 		// Evaluate the candidate model
-		exactAcc, generousAcc, forgivenessAcc, _, _, _ := candidateBlueprint.EvaluateModelPerformance(sessions, forgivenessThreshold)
+		exactAcc, generousAcc, forgivenessAcc, _, _, _ := candidateBlueprint.EvaluateModelPerformance(sessions)
 
 		// Determine if there's an improvement based on selected metrics
 		improved := false
@@ -263,7 +263,7 @@ func (bp *Blueprint) SimpleNASWithRandomConnections(
 		return
 	}
 
-	bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy, _, _, _ := bestBlueprint.EvaluateModelPerformance(sessions, forgivenessThreshold)
+	bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy, _, _, _ := bestBlueprint.EvaluateModelPerformance(sessions)
 
 	// Array to store progress
 	progress := []struct {
@@ -305,7 +305,7 @@ func (bp *Blueprint) SimpleNASWithRandomConnections(
 
 		// Perform hill-climbing weight updates
 		for w := 0; w < weightUpdateIterations; w++ {
-			improved := candidateBlueprint.HillClimbWeightUpdate(sessions, forgivenessThreshold)
+			improved := candidateBlueprint.HillClimbWeightUpdate(sessions)
 			if !improved {
 				// If no improvement, you can choose to continue or break early
 				// Here, we'll continue for the specified number of iterations
@@ -314,7 +314,7 @@ func (bp *Blueprint) SimpleNASWithRandomConnections(
 		}
 
 		// Evaluate the candidate model after weight updates
-		exactAccuracy, generousAccuracy, forgivenessAccuracy, _, _, _ := candidateBlueprint.EvaluateModelPerformance(sessions, forgivenessThreshold)
+		exactAccuracy, generousAccuracy, forgivenessAccuracy, _, _, _ := candidateBlueprint.EvaluateModelPerformance(sessions)
 
 		// Check if the candidate model improves on any of the three metrics
 		if exactAccuracy > bestExactAccuracy ||
@@ -392,7 +392,7 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 	}
 
 	bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy, _, _, _ :=
-		bestBlueprint.EvaluateModelPerformance(sessions, forgivenessThreshold)
+		bestBlueprint.EvaluateModelPerformance(sessions)
 
 	progress := []struct {
 		Iteration           int
@@ -480,7 +480,7 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 
 				// Evaluate the candidate model without hill climbing
 				exactAccuracy, generousAccuracy, forgivenessAccuracy, _, _, _ :=
-					candidateBlueprint.EvaluateModelPerformance(sessions, forgivenessThreshold)
+					candidateBlueprint.EvaluateModelPerformance(sessions)
 
 				resultsChan <- candidateResult{
 					ExactAccuracy:       exactAccuracy,
@@ -525,7 +525,7 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 		if improved && bestIterationCandidate != nil {
 			// Now, perform hill-climbing weight updates on the chosen candidate
 			for w := 0; w < weightUpdateIterations; w++ {
-				hcImproved := bestIterationCandidate.HillClimbWeightUpdate(sessions, forgivenessThreshold)
+				hcImproved := bestIterationCandidate.HillClimbWeightUpdate(sessions)
 				if !hcImproved {
 					// If no improvement, continue to try the remaining iterations
 					continue
@@ -534,7 +534,7 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 
 			// Re-evaluate after hill climbing
 			newExact, newGenerous, newForgiveness, _, _, _ :=
-				bestIterationCandidate.EvaluateModelPerformance(sessions, forgivenessThreshold)
+				bestIterationCandidate.EvaluateModelPerformance(sessions)
 
 			// Check if after hill climbing it's still an improvement
 			if newExact > bestExactAccuracy ||
