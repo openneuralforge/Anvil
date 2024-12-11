@@ -32,28 +32,29 @@ func (bp *Blueprint) InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType string
 		fmt.Printf("Inserted new Neuron with ID %d of type '%s' between inputs and outputs.\n", newNeuronID, neuronType)
 	}
 	// Connect input nodes to the new neuron
+	// Connect input nodes to the new neuron
 	for _, inputID := range bp.InputNodes {
-		// Assign a random weight between -1 and 1
 		weight := rand.Float64()*2 - 1
 		newConnection := []float64{float64(inputID), weight}
 		newNeuron.Connections = append(newNeuron.Connections, newConnection)
-		if bp.Debug {
-			fmt.Printf("Connected Input Neuron %d to New Neuron %d with weight %.4f.\n", inputID, newNeuronID, weight)
-		}
 	}
 
-	// Connect the new neuron to each output neuron without removing existing connections
+	// Randomly connect to existing neurons (including hidden neurons)
+	existingNeuronIDs := bp.getAllNeuronIDs() // Ensure this method returns all existing neuron IDs
+	for i := 0; i < rand.Intn(3)+1; i++ {     // Connect to 1-3 random existing neurons
+		targetID := existingNeuronIDs[rand.Intn(len(existingNeuronIDs))]
+		weight := rand.Float64()*2 - 1
+		newConnection := []float64{float64(targetID), weight}
+		newNeuron.Connections = append(newNeuron.Connections, newConnection)
+	}
+
+	// Connect the new neuron to each output neuron
 	for _, outputID := range bp.OutputNodes {
 		outputNeuron, exists := bp.Neurons[outputID]
-		if !exists {
-			fmt.Printf("Warning: Output Neuron with ID %d does not exist.\n", outputID)
-			continue
-		}
-		weight := rand.Float64()*2 - 1
-		newConnection := []float64{float64(newNeuronID), weight}
-		outputNeuron.Connections = append(outputNeuron.Connections, newConnection)
-		if bp.Debug {
-			fmt.Printf("Connected New Neuron %d to Output Neuron %d with weight %.4f.\n", newNeuronID, outputID, weight)
+		if exists {
+			weight := rand.Float64()*2 - 1
+			newConnection := []float64{float64(newNeuronID), weight}
+			outputNeuron.Connections = append(outputNeuron.Connections, newConnection)
 		}
 	}
 
