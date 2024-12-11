@@ -120,33 +120,24 @@ func (bp *Blueprint) EvaluateAndLogPerformance(sessions []Session, logger *Perfo
 	metricsCh := make(chan SessionPerformance, len(sessions))
 	errorCh := make(chan error, len(sessions))
 
-	// Iterate over each session
 	for idx, session := range sessions {
 		wg.Add(1)
 		go func(sessionID int, sess Session) {
 			defer wg.Done()
 
-			// Run the network on the session
 			bp.RunNetwork(sess.InputVariables, sess.Timesteps)
 			predictedOutput := bp.GetOutputs()
 
-			// Apply softmax to get probabilities
-			probs := softmaxMap(predictedOutput)
-
 			// Determine predicted class and its probability
+			probs := softmaxMap(predictedOutput)
 			predClass, predProb := argmaxWithProb(probs)
-
-			// Determine expected class
 			expClass := argmaxMap(sess.ExpectedOutput)
 
-			// Calculate accuracies
+			// Calculate metrics
 			exactAcc, generousAcc, forgiveAcc := calculateAccuracies(predClass, expClass)
-
-			// Calculate error metric (simple inverse of exact accuracy)
 			errorMetric := 100.0 - exactAcc
 
-			// Create a SessionPerformance record
-			sp := SessionPerformance{
+			metricsCh <- SessionPerformance{
 				SessionID:            sessionID,
 				ExactAccuracy:        exactAcc,
 				GenerousAccuracy:     generousAcc,
@@ -157,29 +148,22 @@ func (bp *Blueprint) EvaluateAndLogPerformance(sessions []Session, logger *Perfo
 				PredictedProbability: predProb,
 				Timestamp:            time.Now().Format(time.RFC3339),
 			}
-
-			// Send the metrics to the channel
-			metricsCh <- sp
-		}(idx+1, session) // SessionID starts at 1
+		}(idx+1, session)
 	}
 
-	// Wait for all evaluations to complete
 	wg.Wait()
 	close(metricsCh)
 	close(errorCh)
 
-	// Check for errors
 	if len(errorCh) > 0 {
 		return fmt.Errorf("errors occurred during evaluation")
 	}
 
-	// Log each session's performance
 	for sp := range metricsCh {
 		if err := logger.Log(sp); err != nil {
 			return fmt.Errorf("failed to log performance for session %d: %v", sp.SessionID, err)
 		}
 	}
-
 	return nil
 }
 
@@ -221,9 +205,7 @@ func argmaxMap(m map[int]float64) int {
 			maxKey = k
 		}
 	}
-	// Convert from neuron ID to class index (0-9) if necessary
-	// Adjust this based on how your neuron IDs map to classes
-	return maxKey - 80001
+	return maxKey // Directly return the key as the class index
 }
 
 // argmaxWithProb returns the key of the maximum value in the map and its probability.
@@ -237,8 +219,5 @@ func argmaxWithProb(m map[int]float64) (int, float64) {
 			maxKey = k
 		}
 	}
-	// Convert from neuron ID to class index (0-9) if necessary
-	// Adjust this based on how your neuron IDs map to classes
-	classIndex := maxKey - 80001
-	return classIndex, maxVal
+	return maxKey, maxVal
 }

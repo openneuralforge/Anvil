@@ -19,61 +19,39 @@ func (bp *Blueprint) EvaluateModelPerformance(sessions []Session, forgivenessThr
 	exactCorrectPredictions := 0
 	totalGenerousScore := 0.0
 	forgivenessCorrectPredictions := 0
-
 	exactErrorCount := 0
 	totalGenerousError := 0.0
 	forgivenessErrorCount := 0
 
-	// Loop through each session to evaluate performance
-	for i, session := range sessions {
-		// Run the model's feedforward pass with the session's input variables
+	for _, session := range sessions {
 		bp.RunNetwork(session.InputVariables, session.Timesteps)
 		predictedOutput := bp.GetOutputs()
 
-		// Apply softmax to get probabilities
 		probs := softmaxMap(predictedOutput)
-
-		// Determine predicted class
 		predClass := argmaxMap(probs)
-
-		// Determine expected class
 		expClass := argmaxMap(session.ExpectedOutput)
 
-		// Check exact match for exact accuracy
 		if predClass == expClass {
 			exactCorrectPredictions++
 		} else {
 			exactErrorCount++
 		}
 
-		// Calculate similarity score for generous accuracy
 		similarityScore := calculateSimilarityScore(predictedOutput, session.ExpectedOutput)
 		totalGenerousScore += similarityScore
-
-		// Track generous error
 		generousError := 100.0 - similarityScore
 		totalGenerousError += generousError
 
-		// Check if prediction is within forgiveness threshold
 		if isWithinForgivenessThreshold(predictedOutput, session.ExpectedOutput, forgivenessThreshold) {
 			forgivenessCorrectPredictions++
 		} else {
 			forgivenessErrorCount++
 		}
-
-		_ = i // Placeholder if you want to use the index
 	}
 
-	// Calculate exact accuracy as a percentage
 	exactAccuracy := float64(exactCorrectPredictions) / float64(len(sessions)) * 100.0
-
-	// Calculate generous accuracy as the average similarity score
 	generousAccuracy := totalGenerousScore / float64(len(sessions))
-
-	// Calculate forgiveness accuracy as a percentage
 	forgivenessAccuracy := float64(forgivenessCorrectPredictions) / float64(len(sessions)) * 100.0
-
-	// Calculate average generous error
 	averageGenerousError := totalGenerousError / float64(len(sessions))
 
 	return exactAccuracy, generousAccuracy, forgivenessAccuracy, exactErrorCount, averageGenerousError, forgivenessErrorCount
