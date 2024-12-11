@@ -16,9 +16,9 @@ type Session struct {
 // returning exact accuracy, generous accuracy, decile consistency accuracy, and their associated errors.
 func (bp *Blueprint) EvaluateModelPerformance(sessions []Session) (float64, float64, float64, int, float64, int) {
 	exactCorrectPredictions := 0
-	totalGenerousScore := 0.0
 	decileConsistentCount := 0
 	exactErrorCount := 0
+	totalGenerousValue := 0.0
 	totalGenerousError := 0.0
 	decileInconsistentCount := 0
 
@@ -36,9 +36,9 @@ func (bp *Blueprint) EvaluateModelPerformance(sessions []Session) (float64, floa
 			exactErrorCount++
 		}
 
-		similarityScore := calculateSimilarityScore(predictedOutput, session.ExpectedOutput)
-		totalGenerousScore += similarityScore
-		generousError := 100.0 - similarityScore
+		generousValue := calculateGenerousValue(predictedOutput, session.ExpectedOutput)
+		totalGenerousValue += generousValue
+		generousError := getMaxFloat() - generousValue
 		totalGenerousError += generousError
 
 		if isDecileConsistent(predictedOutput, session.ExpectedOutput) {
@@ -49,7 +49,7 @@ func (bp *Blueprint) EvaluateModelPerformance(sessions []Session) (float64, floa
 	}
 
 	exactAccuracy := float64(exactCorrectPredictions) / float64(len(sessions)) * 100.0
-	generousAccuracy := totalGenerousScore / float64(len(sessions))
+	generousAccuracy := totalGenerousValue / float64(len(sessions))
 	decileConsistencyAccuracy := float64(decileConsistentCount) / float64(len(sessions)) * 100.0
 	averageGenerousError := totalGenerousError / float64(len(sessions))
 
@@ -132,4 +132,178 @@ func isDecileConsistent(predicted, expected map[int]float64) bool {
 	}
 
 	return true
+}
+
+// calculateGenerousValue calculates a similarity value based on the highest floating-point value.
+func calculateGenerousValue(predicted, expected map[int]float64) float64 {
+	if len(predicted) == 0 || len(expected) == 0 {
+		return 0.0
+	}
+
+	totalDifference := 0.0
+	count := 0
+	for id, expectedValue := range expected {
+		predictedValue, exists := predicted[id]
+		if !exists {
+			continue
+		}
+		difference := math.Abs(predictedValue - expectedValue)
+		totalDifference += difference
+		count++
+	}
+
+	if count == 0 {
+		return 0.0 // Avoid division by zero
+	}
+
+	meanDifference := totalDifference / float64(count)
+	generousValue := 1.0 - meanDifference // Ensure the value is bounded between 0 and 1
+
+	if generousValue < 0 {
+		generousValue = 0.0
+	}
+
+	return generousValue
+}
+
+// calculateClassSensitivity penalizes misclassifications more heavily for certain classes.
+func calculateClassSensitivity(predicted, expected map[int]float64) float64 {
+	penaltyFactor := 2.0 // Example sensitivity multiplier
+	totalPenalty := 0.0
+	for id, expectedValue := range expected {
+		predictedValue, exists := predicted[id]
+		if !exists {
+			totalPenalty += penaltyFactor
+			continue
+		}
+		difference := math.Abs(predictedValue - expectedValue)
+		if expectedValue > 0.8 { // Example condition for "sensitive" classes
+			totalPenalty += difference * penaltyFactor
+		} else {
+			totalPenalty += difference
+		}
+	}
+	return getMaxFloat() - totalPenalty
+}
+
+// calculateWeightedProximity evaluates the closeness of predictions to expected values, weighted by their importance.
+func calculateWeightedProximity(predicted, expected map[int]float64) float64 {
+	if len(predicted) == 0 || len(expected) == 0 {
+		return 0.0
+	}
+
+	totalWeightedDifference := 0.0
+	totalWeight := 0.0
+	for id, expectedValue := range expected {
+		predictedValue, exists := predicted[id]
+		if !exists {
+			continue
+		}
+		difference := math.Abs(predictedValue - expectedValue)
+		weight := math.Max(expectedValue, 0.1) // Avoid zero weight
+		totalWeightedDifference += difference * weight
+		totalWeight += weight
+	}
+
+	if totalWeight == 0 {
+		return 0.0 // Avoid division by zero
+	}
+
+	return 1.0 - (totalWeightedDifference / totalWeight) // Ensure proximity is normalized between 0 and 1
+}
+
+func (bp *Blueprint) AdvancedEvaluateModelPerformance(sessions []Session) (float64, float64, map[string]float64, float64, int, float64, int) {
+	exactCorrectPredictions := 0
+	totalGenerousValue := 0.0
+	totalAdvancedMetrics := map[string]float64{
+		"weightedProximity":   0.0,
+		"classSensitivity":    0.0,
+		"temporalConsistency": 0.0,
+	}
+	totalGenerousError := 0.0
+	exactErrorCount := 0
+	decileConsistentCount := 0
+	decileInconsistentCount := 0
+
+	for _, session := range sessions {
+		bp.RunNetwork(session.InputVariables, session.Timesteps)
+		predictedOutput := bp.GetOutputs()
+
+		probs := softmaxMap(predictedOutput)
+		predClass := argmaxMap(probs)
+		expClass := argmaxMap(session.ExpectedOutput)
+
+		if predClass == expClass {
+			exactCorrectPredictions++
+		} else {
+			exactErrorCount++
+		}
+
+		// Old generous accuracy
+		generousValue := calculateGenerousValue(predictedOutput, session.ExpectedOutput)
+		totalGenerousValue += generousValue
+		generousError := getMaxFloat() - generousValue
+		totalGenerousError += generousError
+
+		// Advanced generous metrics
+		totalAdvancedMetrics["weightedProximity"] += calculateWeightedProximity(predictedOutput, session.ExpectedOutput)
+		totalAdvancedMetrics["classSensitivity"] += calculateClassSensitivity(predictedOutput, session.ExpectedOutput)
+		totalAdvancedMetrics["temporalConsistency"] += calculateTemporalConsistency(predictedOutput, session.ExpectedOutput)
+
+		if isDecileConsistent(predictedOutput, session.ExpectedOutput) {
+			decileConsistentCount++
+		} else {
+			decileInconsistentCount++
+		}
+	}
+
+	exactAccuracy := float64(exactCorrectPredictions) / float64(len(sessions)) * 100.0
+	generousAccuracy := totalGenerousValue / float64(len(sessions))
+	for metric := range totalAdvancedMetrics {
+		totalAdvancedMetrics[metric] /= float64(len(sessions))
+	}
+	averageGenerousError := totalGenerousError / float64(len(sessions))
+	decileConsistencyAccuracy := float64(decileConsistentCount) / float64(len(sessions)) * 100.0
+
+	return exactAccuracy, generousAccuracy, totalAdvancedMetrics, decileConsistencyAccuracy, exactErrorCount, averageGenerousError, decileInconsistentCount
+}
+
+// calculateTemporalConsistency evaluates stability across timesteps for recurrent networks.
+func calculateTemporalConsistency(predicted, expected map[int]float64) float64 {
+	if len(predicted) == 0 || len(expected) == 0 {
+		return 0.0
+	}
+
+	// Assuming predicted and expected contain temporal sequences as time-indexed keys.
+	// You can replace this logic with the actual representation of your time-indexed data.
+
+	var prevPredicted float64
+	var prevExpected float64
+	temporalStability := 0.0
+	numComparisons := 0
+
+	for t := 1; t < len(predicted); t++ { // Assuming keys are time indices
+		currentPredicted := predicted[t]
+		currentExpected := expected[t]
+
+		if t > 1 { // Compare with previous values to assess consistency
+			predictedDelta := math.Abs(currentPredicted - prevPredicted)
+			expectedDelta := math.Abs(currentExpected - prevExpected)
+
+			// Penalize large inconsistencies
+			stabilityScore := math.Max(0, 1-math.Abs(predictedDelta-expectedDelta))
+			temporalStability += stabilityScore
+			numComparisons++
+		}
+
+		prevPredicted = currentPredicted
+		prevExpected = currentExpected
+	}
+
+	if numComparisons == 0 {
+		return 0.0
+	}
+
+	// Normalize stability score
+	return temporalStability / float64(numComparisons) * 100.0
 }

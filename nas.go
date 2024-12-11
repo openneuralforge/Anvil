@@ -13,11 +13,18 @@ import (
 )
 
 // This struct stores the result of evaluating a candidate blueprint.
+// candidateResult stores the result of evaluating a candidate blueprint.
+// candidateResult stores the result of evaluating a candidate blueprint.
 type candidateResult struct {
-	ExactAccuracy       float64
-	GenerousAccuracy    float64
-	ForgivenessAccuracy float64
-	CandidateBlueprint  *Blueprint
+	ExactAccuracy       float64            // Exact match accuracy
+	GenerousAccuracy    float64            // Generous accuracy
+	ForgivenessAccuracy float64            // Forgiveness accuracy (if needed, you can remove this if unused)
+	AdvancedMetrics     map[string]float64 // Advanced metrics (e.g., weighted proximity, class sensitivity, etc.)
+	DecileConsistency   float64            // Decile consistency accuracy
+	ExactErrorCount     int                // Count of exact prediction errors
+	GenerousError       float64            // Average generous error
+	DecileInconsistency int                // Count of decile inconsistencies
+	CandidateBlueprint  *Blueprint         // The evaluated candidate blueprint
 }
 
 // SimpleNAS performs a basic neural architecture search by incrementally adding one neuron at a time
@@ -502,13 +509,326 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 
 			bestBlueprint = bestIterationCandidate
 			*bp = *bestBlueprint // Update the original blueprint as well
-			fmt.Printf("Iteration %d: Improved model found! Exact=%.2f%%, Generous=%.2f%%, Forgiveness=%.2f%%\n",
+			fmt.Printf("Iteration %d: Improved model found! Exact=%.2f%%, Generous=%.2e, Forgiveness=%.2f%%\n",
 				iteration, bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy)
 
 			// Save the improved model
 			saveModelToFile(bestBlueprint, iteration)
 		} else {
 			fmt.Printf("Iteration %d: No improvement.\n", iteration)
+		}
+	}
+}
+
+func (bp *Blueprint) AdvancedParallelSimpleNASWithRandomConnections(
+	sessions []Session,
+	maxIterations int,
+	neuronTypes []string,
+	weightUpdateIterations int,
+	useHillClimbing bool, // Toggle for hill climbing
+	saveImprovedModel bool, // Toggle for saving improved models
+	saveLocation string, // Folder path to save improved models
+) {
+	// Seed the random number generator
+	rand.Seed(time.Now().UnixNano())
+
+	// Clone the initial blueprint
+	bestBlueprint := bp.Clone()
+	if bestBlueprint == nil {
+		fmt.Println("Failed to clone the initial blueprint.")
+		return
+	}
+
+	// Evaluate initial blueprint performance
+	bestExactAccuracy, bestGenerousAccuracy, bestAdvancedMetrics, bestDecileConsistency, _, _, _ :=
+		bestBlueprint.AdvancedEvaluateModelPerformance(sessions)
+
+	fmt.Printf("Initial model performance: Exact=%.2f%%, Generous=%.2f%%, DecileConsistency=%.2f%%\n",
+		bestExactAccuracy, bestGenerousAccuracy, bestDecileConsistency)
+
+	// Determine the level of parallelism
+	numWorkers := runtime.NumCPU()
+	fmt.Printf("Running with %d parallel workers.\n", numWorkers)
+
+	// Helper functions for serialization
+	serializeBlueprint := func(bp *Blueprint) (string, error) {
+		data, err := json.Marshal(bp)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
+
+	saveModelToFile := func(bp *Blueprint, iteration int) {
+		if !saveImprovedModel {
+			return
+		}
+
+		fileName := fmt.Sprintf("%s/iteration%d_model_%d.json", saveLocation, iteration, time.Now().Unix())
+		serializedModel, err := serializeBlueprint(bp)
+		if err != nil {
+			fmt.Printf("Error serializing model for saving: %v\n", err)
+			return
+		}
+
+		err = os.WriteFile(fileName, []byte(serializedModel), 0644)
+		if err != nil {
+			fmt.Printf("Error saving model to file: %v\n", err)
+			return
+		}
+		fmt.Printf("Model saved to %s\n", fileName)
+	}
+
+	// Main NAS loop
+	for iteration := 1; iteration <= maxIterations; iteration++ {
+		fmt.Printf("=== Iteration %d ===\n", iteration)
+
+		// Generate candidates in parallel
+		var wg sync.WaitGroup
+		resultsChan := make(chan candidateResult, numWorkers)
+
+		for w := 0; w < numWorkers; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				// Clone the current best blueprint
+				candidateBlueprint := bestBlueprint.Clone()
+				if candidateBlueprint == nil {
+					return
+				}
+
+				// Add a new neuron
+				neuronType := neuronTypes[rand.Intn(len(neuronTypes))]
+				if err := candidateBlueprint.InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType); err != nil {
+					return
+				}
+
+				// Evaluate the candidate
+				exactAccuracy, generousAccuracy, advancedMetrics, decileConsistency, _, _, _ :=
+					candidateBlueprint.AdvancedEvaluateModelPerformance(sessions)
+
+				// Log the metrics for debugging
+				fmt.Printf("Candidate Metrics: Exact=%.2f, Generous=%.2f, DecileConsistency=%.2f, WeightedProximity=%.2f\n",
+					exactAccuracy, generousAccuracy, decileConsistency, advancedMetrics["weightedProximity"])
+
+				// Send result to channel
+				resultsChan <- candidateResult{
+					ExactAccuracy:      exactAccuracy,
+					GenerousAccuracy:   generousAccuracy,
+					AdvancedMetrics:    advancedMetrics,
+					DecileConsistency:  decileConsistency,
+					CandidateBlueprint: candidateBlueprint,
+				}
+			}()
+		}
+
+		// Wait for all workers
+		wg.Wait()
+		close(resultsChan)
+
+		// Process results
+		var bestIterationCandidate *Blueprint
+		improved := false
+
+		for res := range resultsChan {
+			// Evaluate improvement criteria
+			if res.ExactAccuracy > bestExactAccuracy ||
+				(res.ExactAccuracy == bestExactAccuracy && (res.GenerousAccuracy > bestGenerousAccuracy || res.DecileConsistency > bestDecileConsistency)) ||
+				(res.AdvancedMetrics["weightedProximity"] > bestAdvancedMetrics["weightedProximity"]) {
+				bestIterationCandidate = res.CandidateBlueprint
+				bestExactAccuracy = res.ExactAccuracy
+				bestGenerousAccuracy = res.GenerousAccuracy
+				bestAdvancedMetrics = res.AdvancedMetrics
+				bestDecileConsistency = res.DecileConsistency
+				improved = true
+			}
+		}
+
+		if improved && bestIterationCandidate != nil {
+			if useHillClimbing {
+				for w := 0; w < weightUpdateIterations; w++ {
+					if !bestIterationCandidate.HillClimbWeightUpdate(sessions) {
+						break
+					}
+				}
+			}
+
+			bestBlueprint = bestIterationCandidate
+			*bp = *bestBlueprint // Update the original blueprint as well
+			fmt.Printf("Iteration %d: Improved model found! Exact=%.2f%%, Generous=%.2f%%, DecileConsistency=%.2f%%\n",
+				iteration, bestExactAccuracy, bestGenerousAccuracy, bestDecileConsistency)
+
+			// Save the improved model
+			saveModelToFile(bestBlueprint, iteration)
+		} else {
+			fmt.Printf("Iteration %d: No improvement.\n", iteration)
+		}
+	}
+}
+
+func (bp *Blueprint) AdvancedParallelNASWithDynamicNeuronGeneration(
+	sessions []Session,
+	maxIterations int,
+	neuronTypes []string,
+	weightUpdateIterations int,
+	useHillClimbing bool, // Toggle for hill climbing
+	saveImprovedModel bool, // Toggle for saving improved models
+	saveLocation string, // Folder path to save improved models
+	maxTriesWithoutImprovement int, // Number of tries before increasing neuron range
+	batchSize int, // Number of batches per iteration
+) {
+	// Seed the random number generator
+	rand.Seed(time.Now().UnixNano())
+
+	// Clone the initial blueprint
+	bestBlueprint := bp.Clone()
+	if bestBlueprint == nil {
+		fmt.Println("Failed to clone the initial blueprint.")
+		return
+	}
+
+	// Evaluate initial blueprint performance
+	bestExactAccuracy, bestGenerousAccuracy, bestAdvancedMetrics, bestDecileConsistency, _, _, _ :=
+		bestBlueprint.AdvancedEvaluateModelPerformance(sessions)
+
+	fmt.Printf("Initial model performance: Exact=%.2f%%, Generous=%.2f%%, DecileConsistency=%.2f%%\n",
+		bestExactAccuracy, bestGenerousAccuracy, bestDecileConsistency)
+
+	// Determine the level of parallelism
+	numWorkers := runtime.NumCPU()
+	fmt.Printf("Running with %d parallel workers.\n", numWorkers)
+
+	// Helper functions for serialization
+	serializeBlueprint := func(bp *Blueprint) (string, error) {
+		data, err := json.Marshal(bp)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
+
+	saveModelToFile := func(bp *Blueprint, iteration int) {
+		if !saveImprovedModel {
+			return
+		}
+
+		fileName := fmt.Sprintf("%s/iteration%d_model_%d.json", saveLocation, iteration, time.Now().Unix())
+		serializedModel, err := serializeBlueprint(bp)
+		if err != nil {
+			fmt.Printf("Error serializing model for saving: %v\n", err)
+			return
+		}
+
+		err = os.WriteFile(fileName, []byte(serializedModel), 0644)
+		if err != nil {
+			fmt.Printf("Error saving model to file: %v\n", err)
+			return
+		}
+		fmt.Printf("Model saved to %s\n", fileName)
+	}
+
+	// Initialize variables for dynamic range adjustment
+	currentNeuronRange := 1 // Start with generating one neuron per mutation
+	triesWithoutImprovement := 0
+
+	// Main NAS loop
+	for iteration := 1; iteration <= maxIterations; iteration++ {
+		fmt.Printf("=== Iteration %d ===\n", iteration)
+
+		// Generate candidates in parallel within batches
+		for batch := 0; batch < batchSize; batch++ {
+			var wg sync.WaitGroup
+			resultsChan := make(chan candidateResult, numWorkers)
+
+			for w := 0; w < numWorkers; w++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+
+					// Clone the current best blueprint
+					candidateBlueprint := bestBlueprint.Clone()
+					if candidateBlueprint == nil {
+						return
+					}
+
+					// Add a random number of neurons within the current range
+					numNeurons := rand.Intn(currentNeuronRange) + 1
+					for i := 0; i < numNeurons; i++ {
+						neuronType := neuronTypes[rand.Intn(len(neuronTypes))]
+						if err := candidateBlueprint.InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType); err != nil {
+							return
+						}
+					}
+
+					// Evaluate the candidate
+					exactAccuracy, generousAccuracy, advancedMetrics, decileConsistency, _, _, _ :=
+						candidateBlueprint.AdvancedEvaluateModelPerformance(sessions)
+
+					// Log the metrics for debugging
+					fmt.Printf("Candidate Metrics: Exact=%.2f, Generous=%.2f, DecileConsistency=%.2f, WeightedProximity=%.2f\n",
+						exactAccuracy, generousAccuracy, decileConsistency, advancedMetrics["weightedProximity"])
+
+					// Send result to channel
+					resultsChan <- candidateResult{
+						ExactAccuracy:      exactAccuracy,
+						GenerousAccuracy:   generousAccuracy,
+						AdvancedMetrics:    advancedMetrics,
+						DecileConsistency:  decileConsistency,
+						CandidateBlueprint: candidateBlueprint,
+					}
+				}()
+			}
+
+			// Wait for all workers
+			wg.Wait()
+			close(resultsChan)
+
+			// Process results
+			var bestIterationCandidate *Blueprint
+			improved := false
+
+			for res := range resultsChan {
+				// Evaluate improvement criteria
+				if res.ExactAccuracy > bestExactAccuracy ||
+					(res.ExactAccuracy == bestExactAccuracy && (res.GenerousAccuracy > bestGenerousAccuracy || res.DecileConsistency > bestDecileConsistency)) ||
+					(res.AdvancedMetrics["weightedProximity"] > bestAdvancedMetrics["weightedProximity"]) {
+					bestIterationCandidate = res.CandidateBlueprint
+					bestExactAccuracy = res.ExactAccuracy
+					bestGenerousAccuracy = res.GenerousAccuracy
+					bestAdvancedMetrics = res.AdvancedMetrics
+					bestDecileConsistency = res.DecileConsistency
+					improved = true
+				}
+			}
+
+			if improved && bestIterationCandidate != nil {
+				triesWithoutImprovement = 0 // Reset tries without improvement
+
+				if useHillClimbing {
+					for w := 0; w < weightUpdateIterations; w++ {
+						if !bestIterationCandidate.HillClimbWeightUpdate(sessions) {
+							break
+						}
+					}
+				}
+
+				bestBlueprint = bestIterationCandidate
+				*bp = *bestBlueprint // Update the original blueprint as well
+				fmt.Printf("Iteration %d: Improved model found! Exact=%.2f%%, Generous=%.2f%%, DecileConsistency=%.2f%%\n",
+					iteration, bestExactAccuracy, bestGenerousAccuracy, bestDecileConsistency)
+
+				// Save the improved model
+				saveModelToFile(bestBlueprint, iteration)
+			} else {
+				triesWithoutImprovement++
+				fmt.Printf("Iteration %d: No improvement.\n", iteration)
+				if triesWithoutImprovement >= maxTriesWithoutImprovement {
+					currentNeuronRange++ // Increase the range for neuron generation
+					triesWithoutImprovement = 0
+					fmt.Printf("Increasing neuron generation range to %d.\n", currentNeuronRange)
+				}
+			}
 		}
 	}
 }

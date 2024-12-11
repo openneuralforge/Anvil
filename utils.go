@@ -265,3 +265,8 @@ func (bp *Blueprint) getRandomConnectionPair() (int, int) {
 	}
 	return -1, -1
 }
+
+// getMaxFloat returns the maximum floating-point value.
+func getMaxFloat() float64 {
+	return math.MaxFloat64
+}
