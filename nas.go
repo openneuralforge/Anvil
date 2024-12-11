@@ -2,10 +2,10 @@
 package blueprint
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -379,6 +379,9 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 	maxIterations int,
 	neuronTypes []string,
 	weightUpdateIterations int,
+	useHillClimbing bool, // Toggle for hill climbing
+	saveImprovedModel bool, // Toggle for saving improved models
+	saveLocation string, // Folder path to save improved models
 ) {
 	// Seed the random number generator
 	rand.Seed(time.Now().UnixNano())
@@ -390,31 +393,18 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 		return
 	}
 
+	// Evaluate initial blueprint performance
 	bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy, _, _, _ :=
 		bestBlueprint.EvaluateModelPerformance(sessions)
-
-	progress := []struct {
-		Iteration           int
-		ExactAccuracy       float64
-		GenerousAccuracy    float64
-		ForgivenessAccuracy float64
-	}{
-		{
-			Iteration:           0,
-			ExactAccuracy:       bestExactAccuracy,
-			GenerousAccuracy:    bestGenerousAccuracy,
-			ForgivenessAccuracy: bestForgivenessAccuracy,
-		},
-	}
 
 	fmt.Printf("Initial model performance: Exact=%.2f%%, Generous=%.2f%%, Forgiveness=%.2f%%\n",
 		bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy)
 
-	// Determine the level of parallelism based on the number of CPU cores
+	// Determine the level of parallelism
 	numWorkers := runtime.NumCPU()
 	fmt.Printf("Running with %d parallel workers.\n", numWorkers)
 
-	// Helper functions to serialize/deserialize the blueprint
+	// Helper functions for serialization
 	serializeBlueprint := func(bp *Blueprint) (string, error) {
 		data, err := json.Marshal(bp)
 		if err != nil {
@@ -423,35 +413,31 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 		return string(data), nil
 	}
 
-	deserializeBlueprint := func(data string) (*Blueprint, error) {
-		var newBP Blueprint
-		dec := json.NewDecoder(bytes.NewReader([]byte(data)))
-		if err := dec.Decode(&newBP); err != nil {
-			return nil, err
+	saveModelToFile := func(bp *Blueprint, iteration int) {
+		if !saveImprovedModel {
+			return
 		}
-		// Re-initialize any maps or activation functions that are not serialized
-		newBP.InitializeActivationFunctions()
-		return &newBP, nil
+
+		fileName := fmt.Sprintf("%s/iteration%d_model_%d.json", saveLocation, iteration, time.Now().Unix())
+		serializedModel, err := serializeBlueprint(bp)
+		if err != nil {
+			fmt.Printf("Error serializing model for saving: %v\n", err)
+			return
+		}
+
+		err = os.WriteFile(fileName, []byte(serializedModel), 0644)
+		if err != nil {
+			fmt.Printf("Error saving model to file: %v\n", err)
+			return
+		}
+		fmt.Printf("Model saved to %s\n", fileName)
 	}
 
-	type candidateResult struct {
-		ExactAccuracy       float64
-		GenerousAccuracy    float64
-		ForgivenessAccuracy float64
-		CandidateBlueprint  *Blueprint
-	}
-
+	// Main NAS loop
 	for iteration := 1; iteration <= maxIterations; iteration++ {
 		fmt.Printf("=== Iteration %d ===\n", iteration)
 
-		// Serialize the current best blueprint
-		bestBPJSON, err := serializeBlueprint(bestBlueprint)
-		if err != nil {
-			fmt.Printf("Iteration %d: Failed to serialize blueprint: %v\n", iteration, err)
-			continue
-		}
-
-		// Generate multiple candidates in parallel
+		// Generate candidates in parallel
 		var wg sync.WaitGroup
 		resultsChan := make(chan candidateResult, numWorkers)
 
@@ -460,27 +446,23 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 			go func() {
 				defer wg.Done()
 
-				// Deserialize the blueprint for this worker
-				candidateBlueprint, err := deserializeBlueprint(bestBPJSON)
-				if err != nil {
-					fmt.Printf("Worker: Failed to deserialize blueprint: %v\n", err)
+				// Clone the current best blueprint
+				candidateBlueprint := bestBlueprint.Clone()
+				if candidateBlueprint == nil {
 					return
 				}
 
-				// Randomly select a neuron type to add
+				// Add a new neuron
 				neuronType := neuronTypes[rand.Intn(len(neuronTypes))]
-
-				// Insert a neuron of this type between inputs and outputs
-				err = candidateBlueprint.InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType)
-				if err != nil {
-					// Failed to insert a neuron, no result from this worker
+				if err := candidateBlueprint.InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType); err != nil {
 					return
 				}
 
-				// Evaluate the candidate model without hill climbing
+				// Evaluate the candidate
 				exactAccuracy, generousAccuracy, forgivenessAccuracy, _, _, _ :=
 					candidateBlueprint.EvaluateModelPerformance(sessions)
 
+				// Send result to channel
 				resultsChan <- candidateResult{
 					ExactAccuracy:       exactAccuracy,
 					GenerousAccuracy:    generousAccuracy,
@@ -490,96 +472,43 @@ func (bp *Blueprint) ParallelSimpleNASWithRandomConnections(
 			}()
 		}
 
-		// Wait for all workers to finish
+		// Wait for all workers
 		wg.Wait()
 		close(resultsChan)
 
-		// Find the best candidate from this iteration based on the given criteria (before hill climbing)
-		improved := false
+		// Process results
 		var bestIterationCandidate *Blueprint
-		var bestItExact, bestItGenerous, bestItForgiveness float64
-
-		// Initially set improvement metrics to current best for comparison
-		bestItExact = bestExactAccuracy
-		bestItGenerous = bestGenerousAccuracy
-		bestItForgiveness = bestForgivenessAccuracy
+		improved := false
 
 		for res := range resultsChan {
-			// Check if the candidate model improves on any of the metrics
 			if res.ExactAccuracy > bestExactAccuracy ||
 				(res.ExactAccuracy == bestExactAccuracy && (res.GenerousAccuracy > bestGenerousAccuracy || res.ForgivenessAccuracy > bestForgivenessAccuracy)) {
-				// This candidate is at least as good or better than our current best.
-				// Check if it's better than any we've seen so far this iteration
-				if res.ExactAccuracy > bestItExact ||
-					(res.ExactAccuracy == bestItExact && (res.GenerousAccuracy > bestItGenerous || res.ForgivenessAccuracy > bestItForgiveness)) {
-					bestIterationCandidate = res.CandidateBlueprint
-					bestItExact = res.ExactAccuracy
-					bestItGenerous = res.GenerousAccuracy
-					bestItForgiveness = res.ForgivenessAccuracy
-					improved = true
-				}
+				bestIterationCandidate = res.CandidateBlueprint
+				bestExactAccuracy = res.ExactAccuracy
+				bestGenerousAccuracy = res.GenerousAccuracy
+				bestForgivenessAccuracy = res.ForgivenessAccuracy
+				improved = true
 			}
 		}
 
 		if improved && bestIterationCandidate != nil {
-			// Now, perform hill-climbing weight updates on the chosen candidate
-			for w := 0; w < weightUpdateIterations; w++ {
-				hcImproved := bestIterationCandidate.HillClimbWeightUpdate(sessions)
-				if !hcImproved {
-					// If no improvement, continue to try the remaining iterations
-					continue
+			if useHillClimbing {
+				for w := 0; w < weightUpdateIterations; w++ {
+					if !bestIterationCandidate.HillClimbWeightUpdate(sessions) {
+						break
+					}
 				}
 			}
 
-			// Re-evaluate after hill climbing
-			newExact, newGenerous, newForgiveness, _, _, _ :=
-				bestIterationCandidate.EvaluateModelPerformance(sessions)
+			bestBlueprint = bestIterationCandidate
+			*bp = *bestBlueprint // Update the original blueprint as well
+			fmt.Printf("Iteration %d: Improved model found! Exact=%.2f%%, Generous=%.2f%%, Forgiveness=%.2f%%\n",
+				iteration, bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy)
 
-			// Check if after hill climbing it's still an improvement
-			if newExact > bestExactAccuracy ||
-				(newExact == bestExactAccuracy && (newGenerous > bestGenerousAccuracy || newForgiveness > bestForgivenessAccuracy)) {
-				bestBlueprint = bestIterationCandidate
-				bestExactAccuracy = newExact
-				bestGenerousAccuracy = newGenerous
-				bestForgivenessAccuracy = newForgiveness
-
-				fmt.Printf("Iteration %d: Improved model found after hill climbing! Exact=%.2f%%, Generous=%.2f%%, Forgiveness=%.2f%%\n",
-					iteration, bestExactAccuracy, bestGenerousAccuracy, bestForgivenessAccuracy)
-
-				progress = append(progress, struct {
-					Iteration           int
-					ExactAccuracy       float64
-					GenerousAccuracy    float64
-					ForgivenessAccuracy float64
-				}{
-					Iteration:           iteration,
-					ExactAccuracy:       bestExactAccuracy,
-					GenerousAccuracy:    bestGenerousAccuracy,
-					ForgivenessAccuracy: bestForgivenessAccuracy,
-				})
-			} else {
-				// After hill climbing, the candidate no longer improves the best metrics.
-				// No update to the bestBlueprint.
-				fmt.Printf("Iteration %d: Candidate did not improve after hill climbing.\n", iteration)
-			}
+			// Save the improved model
+			saveModelToFile(bestBlueprint, iteration)
 		} else {
 			fmt.Printf("Iteration %d: No improvement.\n", iteration)
 		}
-
-		// Early stopping if exact accuracy reaches 100%
-		if bestExactAccuracy == 100.0 {
-			fmt.Println("Perfect exact accuracy achieved. Stopping NAS.")
-			break
-		}
 	}
-
-	// Print progress
-	fmt.Println("NAS Progress:")
-	for _, record := range progress {
-		fmt.Printf("Iteration %d: Exact=%.2f%%, Generous=%.2f%%, Forgiveness=%.2f%%\n",
-			record.Iteration, record.ExactAccuracy, record.GenerousAccuracy, record.ForgivenessAccuracy)
-	}
-
-	// Update the original blueprint with the best found
-	*bp = *bestBlueprint
 }
