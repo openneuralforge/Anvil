@@ -121,6 +121,7 @@ func (bp *Blueprint) ApplyScalarActivation(value float64, activation string) flo
 }
 
 // Forward propagates inputs through the network
+// Forward propagates inputs through the network
 func (bp *Blueprint) Forward(inputs map[int]float64, timesteps int) {
 	// Set input neurons
 	for id, value := range inputs {
@@ -132,20 +133,16 @@ func (bp *Blueprint) Forward(inputs map[int]float64, timesteps int) {
 		}
 	}
 
-	// Process neurons over timesteps for recurrent networks
+	// Process neurons over timesteps
 	for t := 0; t < timesteps; t++ {
 		if bp.Debug {
 			fmt.Printf("=== Timestep %d ===\n", t)
 		}
-		// Process neurons in order of IDs for simplicity
+
+		// Process all neurons, including hidden neurons
 		for id := 1; id <= len(bp.Neurons); id++ {
 			neuron, exists := bp.Neurons[id]
-			if !exists {
-				continue
-			}
-
-			// Skip input neurons
-			if neuron.Type == "input" {
+			if !exists || neuron.Type == "input" { // Skip input neurons
 				continue
 			}
 
@@ -159,18 +156,13 @@ func (bp *Blueprint) Forward(inputs map[int]float64, timesteps int) {
 				}
 			}
 
-			// Special handling for attention mechanisms
-			if neuron.Type == "attention" {
-				attentionWeights := bp.ComputeAttentionWeights(neuron, inputValues)
-				bp.ApplyAttention(neuron, inputValues, attentionWeights)
-			} else {
-				bp.ProcessNeuron(neuron, inputValues, t)
-			}
+			// Process the neuron
+			bp.ProcessNeuron(neuron, inputValues, t)
 		}
 	}
 
-	// Apply Softmax to Output Layer
-	//bp.ApplySoftmax()
+	// Apply softmax to output neurons
+	bp.ApplySoftmax()
 }
 
 // RunNetwork runs the neural network with given inputs and timesteps
