@@ -270,3 +270,27 @@ func (bp *Blueprint) getRandomConnectionPair() (int, int) {
 func getMaxFloat() float64 {
 	return math.MaxFloat64
 }
+
+func (bp *Blueprint) ValidateConnections() bool {
+	visited := map[int]bool{}
+	var dfs func(int)
+	dfs = func(id int) {
+		if visited[id] {
+			return
+		}
+		visited[id] = true
+		for _, conn := range bp.Neurons[id].Connections {
+			dfs(int(conn[0]))
+		}
+	}
+	for _, inputID := range bp.InputNodes {
+		dfs(inputID)
+	}
+	for _, outputID := range bp.OutputNodes {
+		if !visited[outputID] {
+			fmt.Printf("Output Neuron %d is not connected.\n", outputID)
+			return false
+		}
+	}
+	return true
+}

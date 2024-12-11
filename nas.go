@@ -708,6 +708,14 @@ func (bp *Blueprint) AdvancedParallelNASWithDynamicNeuronGeneration(
 		return string(data), nil
 	}
 
+	deserializeBlueprint := func(data string) (*Blueprint, error) {
+		newBP := &Blueprint{}
+		if err := json.Unmarshal([]byte(data), newBP); err != nil {
+			return nil, err
+		}
+		return newBP, nil
+	}
+
 	saveModelToFile := func(bp *Blueprint, iteration int) {
 		if !saveImprovedModel {
 			return
@@ -746,9 +754,16 @@ func (bp *Blueprint) AdvancedParallelNASWithDynamicNeuronGeneration(
 				go func() {
 					defer wg.Done()
 
-					// Clone the current best blueprint
-					candidateBlueprint := bestBlueprint.Clone()
-					if candidateBlueprint == nil {
+					// Serialize and deserialize to ensure isolation
+					serializedBlueprint, err := serializeBlueprint(bestBlueprint)
+					if err != nil {
+						fmt.Printf("Error serializing blueprint: %v\n", err)
+						return
+					}
+
+					candidateBlueprint, err := deserializeBlueprint(serializedBlueprint)
+					if err != nil {
+						fmt.Printf("Error deserializing blueprint: %v\n", err)
 						return
 					}
 
@@ -759,6 +774,12 @@ func (bp *Blueprint) AdvancedParallelNASWithDynamicNeuronGeneration(
 						if err := candidateBlueprint.InsertNeuronOfTypeBetweenInputsAndOutputs(neuronType); err != nil {
 							return
 						}
+					}
+
+					// Validate connections
+					if !candidateBlueprint.ValidateConnections() {
+						fmt.Println("Candidate blueprint has invalid connections. Skipping.")
+						return
 					}
 
 					// Evaluate the candidate
