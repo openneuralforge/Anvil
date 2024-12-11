@@ -99,19 +99,26 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 		var bestBatchImprovement float64
 
 		for attempt := range attemptCh {
-			if attempt.Improvement > bestBatchImprovement {
-				bestBatchImprovement = attempt.Improvement
-				bestBatchAttempt = &attempt
+			if validateImprovement(
+				attempt.ExactAcc, attempt.GenerousAcc, attempt.ForgiveAcc,
+				initialExact, initialGenerous, initialForgive,
+			) {
+				improvement := calculateImprovement(
+					attempt.ExactAcc, attempt.GenerousAcc, attempt.ForgiveAcc,
+					initialExact, initialGenerous, initialForgive,
+				)
+				if improvement > bestBatchImprovement {
+					bestBatchImprovement = improvement
+					bestBatchAttempt = &attempt
+				}
 			}
 		}
 
-		// Update the model if the best attempt improves all or preserves existing accuracies
-		if bestBatchAttempt != nil && (bestBatchAttempt.ExactAcc >= initialExact &&
-			bestBatchAttempt.GenerousAcc >= initialGenerous &&
-			bestBatchAttempt.ForgiveAcc >= initialForgive) {
-
-			// Deserialize the best batch model
-			err := bp.DeserializesFromJSON(bestBatchAttempt.ModelJSON)
+		// Update the model if the best attempt improves the performance
+		if bestBatchAttempt != nil {
+			// Create a new Blueprint from the best batch model
+			newBlueprint := &Blueprint{}
+			err := newBlueprint.DeserializesFromJSON(bestBatchAttempt.ModelJSON)
 			if err != nil {
 				fmt.Printf("Batch %d: Error deserializing best batch model: %v\n", batchIdx, err)
 				continue
@@ -119,17 +126,21 @@ func (bp *Blueprint) LearnOneDataItemAtATime(
 
 			// Re-evaluate the overall model
 			newExact, newGenerous, newForgive, _, _, _ :=
-				bp.EvaluateModelPerformance(sessions)
+				newBlueprint.EvaluateModelPerformance(sessions)
 
-			// Update initial metrics for the next batch
-			initialExact, initialGenerous, initialForgive = newExact, newGenerous, newForgive
+			// Commit the update and adjust initial metrics
+			if validateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive) {
+				*bp = *newBlueprint // Update the main model with the new blueprint
+				initialExact, initialGenerous, initialForgive = newExact, newGenerous, newForgive
 
-			fmt.Printf("\nBatch %d: Model improved! Updating the main model.\n", batchIdx)
-			fmt.Printf("New Accuracies - Exact: %.6f%%, Generous: %.6f%%, Forgiveness: %.6f%%\n",
-				newExact, newGenerous, newForgive)
-		} else {
-			fmt.Printf("\nBatch %d: No beneficial modifications were found.\n", batchIdx)
+				fmt.Printf("\nBatch %d: Model improved! Updating the main model.\n", batchIdx)
+				fmt.Printf("New Accuracies - Exact: %.6f%%, Generous: %.6f%%, Forgiveness: %.6f%%\n",
+					newExact, newGenerous, newForgive)
+			} else {
+				fmt.Printf("\nBatch %d: No beneficial modifications were found.\n", batchIdx)
+			}
 		}
+
 	}
 
 	fmt.Println("LearnOneDataItemAtATime phase completed.")
@@ -159,19 +170,15 @@ func randomActivationFunction() string {
 	return activations[rand.Intn(len(activations))]
 }
 
-// calculateImprovement calculates the total improvement based on accuracies.
+// calculateImprovement ensures at least one metric improves without others degrading.
 func calculateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive float64) float64 {
-	improvement := 0.0
-	if newExact > initialExact {
-		improvement += newExact - initialExact
-	}
-	if newGenerous > initialGenerous {
-		improvement += newGenerous - initialGenerous
-	}
-	if newForgive > initialForgive {
-		improvement += newForgive - initialForgive
-	}
-	return improvement
+	return (newExact - initialExact) + (newGenerous - initialGenerous) + (newForgive - initialForgive)
+}
+
+// validateImprovement checks if at least one metric improved and no metrics degraded.
+func validateImprovement(newExact, newGenerous, newForgive, initialExact, initialGenerous, initialForgive float64) bool {
+	return (newExact >= initialExact && newGenerous >= initialGenerous && newForgive >= initialForgive) &&
+		(newExact > initialExact || newGenerous > initialGenerous || newForgive > initialForgive)
 }
 
 // getRandomHiddenNeuron selects a random hidden neuron (non-input, non-output).
